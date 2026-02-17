@@ -8,7 +8,7 @@ import {
   Color,
   LaunchProps,
 } from "@raycast/api";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   searchBilibili,
   SearchType,
@@ -121,31 +121,37 @@ export default function Command(
     performSearch(nextPage);
   };
 
-  // Debounce selection change
-  const selectionTimeout = useRef<NodeJS.Timeout | null>(null);
-
-  const handleSelectionChange = async (id: string | null) => {
-    // If not video, do nothing
+  // Batch fetch stats for new items
+  useEffect(() => {
     if (searchType !== "video") return;
 
-    // Clear previous timeout
-    if (selectionTimeout.current) {
-      clearTimeout(selectionTimeout.current);
-    }
+    const fetchMissingStats = async () => {
+      const missingBvids = results
+        .filter((item): item is VideoItem => "bvid" in item)
+        .map((item) => item.bvid)
+        .filter((bvid) => !videoStats[bvid]);
 
-    // If no ID (deselection?), return
-    if (!id) return;
+      if (missingBvids.length === 0) return;
 
-    selectionTimeout.current = setTimeout(async () => {
-      // id is bvid
-      if (videoStats[id]) return; // Already have stats
-
-      const stats = await getVideoDetails(id);
-      if (stats) {
-        setVideoStats((prev) => ({ ...prev, [id]: stats }));
+      const newStats: Record<string, VideoStats> = {};
+      const chunkSize = 5;
+      for (let i = 0; i < missingBvids.length; i += chunkSize) {
+        const chunk = missingBvids.slice(i, i + chunkSize);
+        const promises = chunk.map(async (bvid) => {
+          const stats = await getVideoDetails(bvid);
+          if (stats) {
+            newStats[bvid] = stats;
+          }
+        });
+        await Promise.all(promises);
+        setVideoStats((prev) => ({ ...prev, ...newStats }));
       }
-    }, 300); // 300ms debounce
-  };
+    };
+
+    fetchMissingStats();
+  }, [results, searchType]);
+
+  const handleSelectionChange = async (id: string | null) => {};
 
   const categories: { label: string; value: SearchType }[] = [
     { label: "Video", value: "video" },
