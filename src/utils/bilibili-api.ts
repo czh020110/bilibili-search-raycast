@@ -376,13 +376,21 @@ export async function searchBilibili(
     }
 
     // Determine result list based on type
-    // Video: json.data.result (VideoItem[])
-    // Anime: json.data.result (BangumiItem[])
-    // ...
-    // NOTE: The structure inside `result` usually matches the item type, BUT sometimes `result` is wrapped differently or key names differ slightly.
-    // However, x/web-interface/search/type usually returns `result` as an array of items.
+    const results = (json.data?.result || []) as any[];
 
-    return (json.data?.result || []) as AnyItem[];
+    if (type === "video") {
+      return results.map((item) => ({
+        ...item,
+        type: "video",
+        owner: {
+          mid: item.mid,
+          name: item.author,
+          face: item.upic, // Map upic to owner.face
+        },
+      }));
+    }
+
+    return results as AnyItem[];
   } catch (error) {
     console.error("Search failed:", error);
     return [];

@@ -13,6 +13,7 @@ export default function Command() {
   const [favorites, setFavorites] = useState<VideoItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUserLoggedIn, setIsUserLoggedIn] = useState(isLoggedIn());
+  const [isShowingDetail, setIsShowingDetail] = useState(true);
 
   useEffect(() => {
     if (!isUserLoggedIn) {
@@ -55,37 +56,93 @@ export default function Command() {
   }
 
   return (
-    <List isLoading={isLoading} searchBarPlaceholder="Search favorites...">
-      {favorites.map((item) => (
-        <List.Item
-          key={item.bvid || item.aid}
-          title={item.title}
-          subtitle={item.author}
-          icon={{
-            source: ensureHttps(item.pic),
-            mask: Image.Mask.RoundedRectangle,
-          }}
-          accessories={[
-            { text: formatDuration(item.duration) },
-            {
-              date: new Date(item.pubdate * 1000),
-              tooltip: new Date(item.pubdate * 1000).toLocaleString(),
-            },
-          ]}
-          actions={
-            <ActionPanel>
-              <Action.OpenInBrowser
-                url={ensureHttps(item.arcurl)}
-                title="Open Video"
-              />
-              <Action.CopyToClipboard
-                content={ensureHttps(item.arcurl)}
-                title="Copy Link"
-              />
-            </ActionPanel>
-          }
-        />
-      ))}
+    <List
+      isLoading={isLoading}
+      searchBarPlaceholder="Search favorites..."
+      isShowingDetail={isShowingDetail}
+    >
+      {favorites.map((item) => {
+        const title = item.title;
+        const cover = ensureHttps(item.pic);
+        const url = ensureHttps(item.arcurl);
+
+        const detailMarkdown = `
+![Cover](${cover})
+
+# ${title}
+
+${item.description || "No description"}
+        `;
+
+        const metadata = (
+          <List.Item.Detail.Metadata>
+            <List.Item.Detail.Metadata.Label
+              title="Author"
+              text={item.author}
+              icon={
+                item.owner?.face
+                  ? {
+                      source: ensureHttps(item.owner.face),
+                      mask: Image.Mask.Circle,
+                    }
+                  : undefined
+              }
+            />
+            <List.Item.Detail.Metadata.Label
+              title="Duration"
+              text={formatDuration(item.duration)}
+            />
+            <List.Item.Detail.Metadata.Label
+              title="Publish"
+              text={new Date(item.pubdate * 1000).toLocaleString()}
+            />
+          </List.Item.Detail.Metadata>
+        );
+
+        return (
+          <List.Item
+            key={item.bvid || item.aid}
+            title={title}
+            subtitle={!isShowingDetail ? item.author : undefined}
+            icon={
+              !isShowingDetail
+                ? {
+                    source: cover,
+                    mask: Image.Mask.RoundedRectangle,
+                  }
+                : undefined
+            }
+            accessories={
+              !isShowingDetail
+                ? [
+                    { text: formatDuration(item.duration) },
+                    {
+                      date: new Date(item.pubdate * 1000),
+                      tooltip: new Date(item.pubdate * 1000).toLocaleString(),
+                    },
+                  ]
+                : undefined
+            }
+            detail={
+              <List.Item.Detail markdown={detailMarkdown} metadata={metadata} />
+            }
+            actions={
+              <ActionPanel>
+                <Action.OpenInBrowser url={url} title="Open Video" />
+                <Action.CopyToClipboard content={url} title="Copy Link" />
+                <ActionPanel.Section title="View Options">
+                  <Action
+                    title={isShowingDetail ? "Hide Details" : "Show Details"}
+                    icon={isShowingDetail ? Icon.EyeSlash : Icon.Eye}
+                    shortcut={{ modifiers: ["ctrl"], key: "b" }}
+                    onAction={() => setIsShowingDetail(!isShowingDetail)}
+                  />
+                </ActionPanel.Section>
+              </ActionPanel>
+            }
+          />
+        );
+      })}
       <List.EmptyView title="No favorites found" icon={Icon.Star} />
     </List>
   );

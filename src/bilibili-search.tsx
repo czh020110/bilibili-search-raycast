@@ -495,6 +495,31 @@ ${a.desc || "No summary"}
     <List.Item
       id={id}
       title={title}
+      subtitle={
+        !isShowingDetail
+          ? (item as any).author || (item as any).uname
+          : undefined
+      }
+      icon={
+        !isShowingDetail
+          ? { source: cover, mask: Image.Mask.RoundedRectangle }
+          : undefined
+      }
+      accessories={
+        !isShowingDetail
+          ? [
+              { text: formatDuration((item as any).duration) },
+              {
+                date: (item as any).pubdate
+                  ? new Date((item as any).pubdate * 1000)
+                  : undefined,
+                tooltip: (item as any).pubdate
+                  ? new Date((item as any).pubdate * 1000).toLocaleString()
+                  : undefined,
+              },
+            ]
+          : undefined
+      }
       detail={
         <List.Item.Detail markdown={detailMarkdown} metadata={metadata} />
       }
