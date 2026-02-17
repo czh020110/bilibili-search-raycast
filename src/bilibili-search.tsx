@@ -316,12 +316,8 @@ ${v.description || "No description"}
           }
         />
         <List.Item.Detail.Metadata.Label
-          title="View"
-          text={formatNumber(v.play)}
-        />
-        <List.Item.Detail.Metadata.Label
           title="Data"
-          text={`▲ ${formatNumber(like)}   ₿ ${formatNumber(coin)}   ★ ${formatNumber(fav)}   ↪ ${formatNumber(share)}   “ ${formatNumber(reply)}   ※ ${formatNumber(danmaku)}`}
+          text={`⏯ ${formatNumber(v.play)}   ▲ ${formatNumber(like)}   ₿ ${formatNumber(coin)}   ★ ${formatNumber(fav)}   ↪ ${formatNumber(share)}   “ ${formatNumber(reply)}   ※ ${formatNumber(danmaku)}`}
         />
         <List.Item.Detail.Metadata.Label
           title="Duration"

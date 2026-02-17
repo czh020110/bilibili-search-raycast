@@ -163,11 +163,22 @@ export interface UserItem {
   }>;
 }
 
-export async function getHistory(): Promise<VideoItem[]> {
+export async function getHistory(
+  cursor: {
+    max: number;
+    view_at: number;
+    business: string;
+    ps: number;
+  } | null = null,
+): Promise<{ list: VideoItem[]; cursor: any }> {
   const cookie = getCookie();
-  if (!cookie) return [];
+  if (!cookie) return { list: [], cursor: null };
 
-  const url = "https://api.bilibili.com/x/web-interface/history/cursor?ps=20";
+  let url = "https://api.bilibili.com/x/web-interface/history/cursor?ps=20";
+  if (cursor) {
+    url += `&max=${cursor.max}&view_at=${cursor.view_at}&business=${cursor.business}`;
+  }
+
   try {
     const response = await fetch(url, {
       headers: {
@@ -178,7 +189,7 @@ export async function getHistory(): Promise<VideoItem[]> {
     });
     const json = (await response.json()) as any;
     if (json.code === 0 && json.data && json.data.list) {
-      return json.data.list.map((item: any) => ({
+      const list = json.data.list.map((item: any) => ({
         type: "video",
         bvid: item.history.bvid,
         title: item.title,
@@ -200,15 +211,16 @@ export async function getHistory(): Promise<VideoItem[]> {
         review: 0,
         like: 0,
       })) as VideoItem[];
+      return { list, cursor: json.data.cursor };
     }
-    return [];
+    return { list: [], cursor: null };
   } catch (error) {
     console.error("Failed to fetch history:", error);
-    return [];
+    return { list: [], cursor: null };
   }
 }
 
-export async function getFavorites(): Promise<VideoItem[]> {
+export async function getFavorites(page: number = 1): Promise<VideoItem[]> {
   const cookie = getCookie();
   if (!cookie) return [];
 
@@ -257,7 +269,7 @@ export async function getFavorites(): Promise<VideoItem[]> {
       const media_id = folderJson.data.list[0].id; // Default favorites folder
 
       // 3. Get Resources in Folder
-      const resUrl = `https://api.bilibili.com/x/v3/fav/resource/list?media_id=${media_id}&ps=20&pn=1&keyword=&order=mtime&type=0&tid=0&platform=web`;
+      const resUrl = `https://api.bilibili.com/x/v3/fav/resource/list?media_id=${media_id}&ps=20&pn=${page}&keyword=&order=mtime&type=0&tid=0&platform=web`;
       const resRes = await fetch(resUrl, {
         headers: { Cookie: cookie, "User-Agent": USER_AGENT },
       });
@@ -454,6 +466,8 @@ export interface VideoStats {
   coin: number;
   share: number;
   like: number;
+  tag?: string; // Add tag to stats for convenience or create a separate Details interface
+  desc?: string;
 }
 
 export async function getVideoDetails(
@@ -466,12 +480,19 @@ export async function getVideoDetails(
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
         Referer: "https://www.bilibili.com/",
+        Cookie: getCookie() || "",
       },
     });
     if (!response.ok) return null;
     const json = (await response.json()) as any;
-    if (json.code !== 0 || !json.data || !json.data.stat) return null;
-    return json.data.stat as VideoStats;
+    if (json.code !== 0 || !json.data) return null;
+
+    // Merge stat and other info
+    return {
+      ...json.data.stat,
+      tag: json.data.tag_name, // Typically separate, or we iterate tags
+      desc: json.data.desc,
+    } as VideoStats;
   } catch (error) {
     console.error("Failed to fetch video details:", error);
     return null;
