@@ -14,7 +14,15 @@ function fetchUrl(url) {
         (res) => {
           let data = "";
           res.on("data", (chunk) => (data += chunk));
-          res.on("end", () => resolve(JSON.parse(data)));
+          res.on("end", () => {
+            try {
+              resolve(JSON.parse(data));
+            } catch (e) {
+              console.error("JSON Parse Error:", e);
+              console.error("Raw Data:", data.substring(0, 500)); // Log first 500 chars
+              resolve({});
+            }
+          });
           res.on("error", reject);
         },
       )
@@ -30,11 +38,16 @@ async function run() {
     `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`,
   );
   if (viewData.code === 0) {
-    console.log("Data Keys:", Object.keys(viewData.data));
-    if (viewData.data.tags) console.log("Found 'tags' in view!");
-    if (viewData.data.tag) console.log("Found 'tag' in view!");
-    if (viewData.data.str) console.log("Found 'str' in view!");
-    console.log("Stat:", viewData.data.stat); // Check if view count is here
+    console.log("View Data Keys:", Object.keys(viewData.data));
+    // Check for common tag fields
+    if (viewData.data.tag)
+      console.log("viewData.data.tag found:", viewData.data.tag);
+    if (viewData.data.tags)
+      console.log("viewData.data.tags found:", viewData.data.tags); // Sometimes objects
+    if (viewData.data.tag_name)
+      console.log("viewData.data.tag_name found:", viewData.data.tag_name);
+    if (viewData.data.tname)
+      console.log("viewData.data.tname found:", viewData.data.tname);
   } else {
     console.log("View endpoint failed");
   }

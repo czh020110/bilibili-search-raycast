@@ -193,16 +193,22 @@ ${description}
               title="Publish"
               text={new Date(item.pubdate * 1000).toLocaleString()}
             />
-            {stats?.tag && (
-              <List.Item.Detail.Metadata.TagList title="Tags">
-                {stats.tag
-                  .split(",")
-                  .slice(0, 5)
-                  .map((t) => (
+            {(() => {
+              const tags = (stats?.tag || "")
+                .split(",")
+                .filter((t) => t.trim().length > 0)
+                .slice(0, 5);
+
+              if (tags.length === 0) return null;
+
+              return (
+                <List.Item.Detail.Metadata.TagList title="Tags">
+                  {tags.map((t) => (
                     <List.Item.Detail.Metadata.TagList.Item key={t} text={t} />
                   ))}
-              </List.Item.Detail.Metadata.TagList>
-            )}
+                </List.Item.Detail.Metadata.TagList>
+              );
+            })()}
           </List.Item.Detail.Metadata>
         );
 

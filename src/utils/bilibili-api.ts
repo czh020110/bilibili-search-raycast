@@ -491,7 +491,7 @@ export async function getVideoDetails(
   bvid: string,
 ): Promise<VideoStats | null> {
   const viewUrl = `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`;
-  const tagsUrl = `https://api.bilibili.com/x/tag/archive/tags?bvid=${bvid}`;
+  const searchUrl = `https://api.bilibili.com/x/web-interface/search/all/v2?keyword=${bvid}`;
 
   try {
     const cookie = getCookie() || "";
@@ -502,31 +502,66 @@ export async function getVideoDetails(
       Cookie: cookie,
     };
 
-    const [viewRes, tagsRes] = await Promise.all([
+    const [viewRes, searchRes] = await Promise.all([
       fetch(viewUrl, { headers }),
-      fetch(tagsUrl, { headers }),
+      fetch(searchUrl, { headers }),
     ]);
 
+    // Check view response for stats
     if (!viewRes.ok) return null;
-    const viewJson = (await viewRes.json()) as any;
+    let viewJson;
+    try {
+      viewJson = (await viewRes.json()) as any;
+    } catch (e) {
+      return null;
+    }
     if (viewJson.code !== 0 || !viewJson.data) return null;
 
     let tagName = "";
+
+    // Try to get tags from Search response first (most reliable for Tags)
     try {
-      if (tagsRes.ok) {
-        const tagsJson = (await tagsRes.json()) as any;
-        if (tagsJson.code === 0 && tagsJson.data) {
-          tagName = tagsJson.data.map((t: any) => t.tag_name).join(",");
+      if (searchRes.ok) {
+        const searchJson = (await searchRes.json()) as any;
+        if (
+          searchJson.code === 0 &&
+          searchJson.data &&
+          searchJson.data.result
+        ) {
+          const videoResult = searchJson.data.result.find(
+            (r: any) => r.result_type === "video",
+          );
+          if (videoResult && videoResult.data && videoResult.data.length > 0) {
+            // Find the exact video if multiple (usually first one is correct for BVID search)
+            const exactItem = videoResult.data.find(
+              (v: any) => v.bvid === bvid,
+            );
+            if (exactItem && exactItem.tag) {
+              tagName = exactItem.tag;
+            } else if (videoResult.data[0].tag) {
+              // Fallback to first result
+              tagName = videoResult.data[0].tag;
+            }
+          }
         }
       }
     } catch (e) {
-      console.error("Failed to parse tags", e);
+      console.error("Failed to parse search tags", e);
+    }
+
+    // Fallback: If no tags found, use the Partition Name (tname) from view data
+    if (!tagName) {
+      if (viewJson.data.tname) {
+        tagName = viewJson.data.tname;
+      } else if (viewJson.data.tname_v2) {
+        tagName = viewJson.data.tname_v2;
+      }
     }
 
     // Merge stat and other info
     return {
       ...viewJson.data.stat,
-      tag: tagName || viewJson.data.tag_name, // Use fetched tags, fallback to category
+      tag: tagName, // Use fetched tags or category
       desc: viewJson.data.desc,
       owner: viewJson.data.owner,
     } as VideoStats;
