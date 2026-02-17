@@ -24,6 +24,7 @@ import {
   ensureHttps,
   getVideoDetails,
   VideoStats,
+  getRecommendations,
 } from "./utils/bilibili-api";
 
 interface SearchArguments {
@@ -43,10 +44,12 @@ export default function Command(
 
   // Debounce search
   useEffect(() => {
+    /*
     if (!searchText) {
       setResults([]);
       return;
     }
+    */
     setPage(1);
     setVideoStats({}); // Clear stats on new search
   }, [searchText]);
@@ -57,7 +60,13 @@ export default function Command(
 
       setIsLoading(true);
       try {
-        const data = await searchBilibili(searchText, searchType, newPage);
+        let data: AnyItem[] = [];
+        if (!searchText && newPage === 1) {
+          // Fetch recommendations
+          data = await getRecommendations();
+        } else if (searchText) {
+          data = await searchBilibili(searchText, searchType, newPage);
+        }
         if (newPage === 1) {
           setResults(data);
         } else {
@@ -96,8 +105,15 @@ export default function Command(
   );
 
   useEffect(() => {
+    // Initial load (recommendations) or search change
     performSearch(1);
-  }, [searchText, searchType]);
+  }, [searchText]); // Only re-run when searchText changes. searchType change is handled by performSearch logic but we might want to reset if type changes AND we are searching. But for empty search (recommendations) type doesn't matter much or we only show video recommendations.
+
+  useEffect(() => {
+    if (searchText) {
+      performSearch(1);
+    }
+  }, [searchType]);
 
   const handleLoadMore = () => {
     const nextPage = page + 1;
@@ -290,7 +306,15 @@ ${v.description || "No description"}
 
     metadata = (
       <List.Item.Detail.Metadata>
-        <List.Item.Detail.Metadata.Label title="Author" text={v.author} />
+        <List.Item.Detail.Metadata.Label
+          title="Author"
+          text={v.author}
+          icon={
+            v.owner?.face
+              ? { source: ensureHttps(v.owner.face), mask: Image.Mask.Circle }
+              : undefined
+          }
+        />
         <List.Item.Detail.Metadata.Label
           title="View"
           text={formatNumber(v.play)}
