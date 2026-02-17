@@ -3,7 +3,7 @@
   "name": "bilibili-search",
   "title": "Bilibili Search",
   "description": "Search videos, anime, users, and more on Bilibili",
-  "icon": "bilibili-logo.png",
+  "icon": "bilibili.png",
   "author": "chen",
   "categories": [
     "Web",
@@ -28,16 +28,16 @@
     }
   ],
   "dependencies": {
-    "@raycast/api": "^1.79.0",
-    "@raycast/utils": "^1.16.3",
+    "@raycast/api": "^1.104.6",
+    "@raycast/utils": "^2.2.2",
     "node-fetch": "^3.3.2"
   },
   "devDependencies": {
-    "@types/node": "20.8.10",
-    "@types/react": "18.3.3",
+    "@types/node": "^20.8.10",
+    "@types/react": "^19.2.14",
     "eslint": "^8.57.0",
     "prettier": "^3.3.3",
-    "typescript": "^5.4.5"
+    "typescript": "^5.9.3"
   },
   "scripts": {
     "build": "ray build -e dist",

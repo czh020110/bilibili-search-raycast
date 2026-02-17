@@ -20,6 +20,7 @@ import {
   ArticleItem,
   UserItem,
   formatNumber,
+  ensureHttps,
 } from "./utils/bilibili-api";
 
 interface SearchArguments {
@@ -34,6 +35,7 @@ export default function Command(
   const [results, setResults] = useState<AnyItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [page, setPage] = useState(1);
+  const [isShowingDetail, setIsShowingDetail] = useState(true);
 
   // Debounce search
   useEffect(() => {
@@ -41,9 +43,6 @@ export default function Command(
       setResults([]);
       return;
     }
-
-    // Reset results when type or text changes, but page change handled separately?
-    // Actually if text changes, we reset page to 1.
     setPage(1);
   }, [searchText]);
 
@@ -68,13 +67,6 @@ export default function Command(
     [searchText, searchType],
   );
 
-  // Effect to trigger search when typing stops (debouncing manually or rely on useEffect dependecies)
-  // But strictly, we want to trigger search when `searchText` or `searchType` or `page` changes.
-  // However, we need to be careful not to trigger infinite loops or double fetches.
-
-  // Let's use a simple approach: Trigger search when searchText/searchType changes (reset page 1),
-  // and when page changes (load more).
-
   useEffect(() => {
     performSearch(1);
   }, [searchText, searchType]);
@@ -94,13 +86,6 @@ export default function Command(
     { label: "User", value: "bili_user" },
   ];
 
-  /* 
-     Shortcuts for category switching:
-     This is tricky because Actions are attached to Items. 
-     We can add global actions if possible, or attach to every item.
-     We will attach "Switch Category" actions to items.
-  */
-
   const cycleCategory = (direction: 1 | -1) => {
     const currentIndex = categories.findIndex((c) => c.value === searchType);
     let nextIndex = currentIndex + direction;
@@ -109,17 +94,21 @@ export default function Command(
     setSearchType(categories[nextIndex].value);
   };
 
+  const toggleDetail = () => {
+    setIsShowingDetail((prev) => !prev);
+  };
+
   return (
     <List
       isLoading={isLoading}
       onSearchTextChange={setSearchText}
       searchText={searchText}
       searchBarPlaceholder="Search Bilibili..."
-      isShowingDetail={results.length > 0}
+      isShowingDetail={isShowingDetail && results.length > 0}
       throttle={true}
       pagination={{
         onLoadMore: handleLoadMore,
-        hasMore: results.length > 0 && results.length % 20 === 0, // Approx check
+        hasMore: results.length > 0 && results.length % 20 === 0,
         pageSize: 20,
       }}
       searchBarAccessory={
@@ -144,6 +133,8 @@ export default function Command(
           item={item}
           searchType={searchType}
           onCycleCategory={cycleCategory}
+          isShowingDetail={isShowingDetail}
+          onToggleDetail={toggleDetail}
         />
       ))}
       {results.length === 0 && !isLoading && (
@@ -157,22 +148,37 @@ function SearchResultItem({
   item,
   searchType,
   onCycleCategory,
+  isShowingDetail,
+  onToggleDetail,
 }: {
   item: AnyItem;
   searchType: SearchType;
   onCycleCategory: (dir: 1 | -1) => void;
+  isShowingDetail: boolean;
+  onToggleDetail: () => void;
 }) {
   let title = "";
   let cover = "";
-  let url = ""; // Web URL
+  let url = "";
   let detailMarkdown = "";
-  let metadata: React.ReactNode = null;
+  let metadata: any = null;
+
+  // Protocol Check handled inside specific types via ensureHttps
 
   // Common Actions
-  const commonActions = (
+  const commonActions = (targetUrl: string) => (
     <ActionPanel>
-      <Action.OpenInBrowser url={url} title="Open in Browser" />
-      <Action.CopyToClipboard content={url} title="Copy Link" />
+      <Action.OpenInBrowser url={targetUrl} title="Open in Browser" />
+      <Action.CopyToClipboard content={targetUrl} title="Copy Link" />
+
+      <ActionPanel.Section title="View Options">
+        <Action
+          title={isShowingDetail ? "Hide Details" : "Show Details"}
+          icon={isShowingDetail ? Icon.EyeSlash : Icon.Eye}
+          shortcut={{ modifiers: ["ctrl"], key: "b" }}
+          onAction={onToggleDetail}
+        />
+      </ActionPanel.Section>
 
       <ActionPanel.Section title="Navigation">
         <Action
@@ -194,40 +200,39 @@ function SearchResultItem({
   if (searchType === "video") {
     const v = item as VideoItem;
     title = removeHtmlTags(v.title);
-    cover = v.pic.startsWith("//") ? "https:" + v.pic : v.pic;
-    url = v.arcurl;
+    cover = ensureHttps(v.pic);
+    url = ensureHttps(v.arcurl);
 
     detailMarkdown = `
 ![Cover](${cover})
 
 # ${title}
 
-**Author**: ${v.author}
-**Duration**: ${v.duration}
-**Published**: ${new Date(v.pubdate * 1000).toLocaleDateString()}
-
 ${v.description || "No description"}
         `;
 
     metadata = (
       <List.Item.Detail.Metadata>
+        <List.Item.Detail.Metadata.Label title="作者" text={v.author} />
         <List.Item.Detail.Metadata.Label
-          title="Views"
+          title="观看次数"
           text={formatNumber(v.play)}
         />
         <List.Item.Detail.Metadata.Label
-          title="Danmaku"
-          text={formatNumber(v.video_review)}
+          title="三连"
+          text={`▲ ${formatNumber(0)}   ₿ ${formatNumber(0)}   ★ ${formatNumber(v.favorites)}   ↪ ${formatNumber(0)}`}
+          icon={Icon.Star}
+        />
+        <List.Item.Detail.Metadata.Label title="时长" text={v.duration} />
+        <List.Item.Detail.Metadata.Label
+          title="发布时间"
+          text={new Date(v.pubdate * 1000).toLocaleString()}
         />
         <List.Item.Detail.Metadata.Label
-          title="Favorites"
-          text={formatNumber(v.favorites)}
-        />
-        <List.Item.Detail.Metadata.Label
-          title="Reviews"
+          title="评论数量"
           text={formatNumber(v.review)}
         />
-        <List.Item.Detail.Metadata.TagList title="Tags">
+        <List.Item.Detail.Metadata.TagList title="标签">
           {v.tag
             .split(",")
             .slice(0, 5)
@@ -240,8 +245,8 @@ ${v.description || "No description"}
   } else if (searchType === "media_bangumi") {
     const b = item as BangumiItem;
     title = removeHtmlTags(b.title);
-    cover = b.cover.startsWith("//") ? "https:" + b.cover : b.cover;
-    url = b.url;
+    cover = ensureHttps(b.cover);
+    url = ensureHttps(b.url);
 
     detailMarkdown = `
 ![Cover](${cover})
@@ -267,8 +272,8 @@ ${b.desc || "No description"}
   } else if (searchType === "media_ft") {
     const m = item as MovieItem;
     title = removeHtmlTags(m.title);
-    cover = m.cover.startsWith("//") ? "https:" + m.cover : m.cover;
-    url = m.url;
+    cover = ensureHttps(m.cover);
+    url = ensureHttps(m.url);
 
     detailMarkdown = `
 ![Cover](${cover})
@@ -294,7 +299,7 @@ ${m.desc || "No description"}
   } else if (searchType === "live") {
     const l = item as LiveItem;
     title = removeHtmlTags(l.title);
-    cover = l.cover.startsWith("//") ? "https:" + l.cover : l.cover;
+    cover = ensureHttps(l.cover);
     url = `https://live.bilibili.com/${l.roomid}`;
 
     detailMarkdown = `
@@ -322,21 +327,14 @@ Tags: ${l.tags}
         <List.Item.Detail.Metadata.Label
           title="Host"
           text={l.uname}
-          icon={{
-            source: l.user_cover.startsWith("//")
-              ? "https:" + l.user_cover
-              : l.user_cover,
-            mask: Image.Mask.Circle,
-          }}
+          icon={{ source: ensureHttps(l.user_cover), mask: Image.Mask.Circle }}
         />
       </List.Item.Detail.Metadata>
     );
   } else if (searchType === "article") {
     const a = item as ArticleItem;
     title = removeHtmlTags(a.title);
-    cover = a.cover?.[0]?.startsWith("//")
-      ? "https:" + a.cover[0]
-      : a.cover?.[0] || "";
+    cover = a.cover && a.cover[0] ? ensureHttps(a.cover[0]) : "";
     url = `https://www.bilibili.com/read/cv${a.id}`;
 
     detailMarkdown = `
@@ -366,7 +364,7 @@ ${a.desc || "No summary"}
   } else if (searchType === "bili_user") {
     const u = item as UserItem;
     title = u.uname;
-    cover = u.upic.startsWith("//") ? "https:" + u.upic : u.upic;
+    cover = ensureHttps(u.upic);
     url = `https://space.bilibili.com/${u.mid}`;
 
     detailMarkdown = `
@@ -399,7 +397,7 @@ ${a.desc || "No summary"}
       detail={
         <List.Item.Detail markdown={detailMarkdown} metadata={metadata} />
       }
-      actions={commonActions}
+      actions={commonActions(url)}
     />
   );
 }

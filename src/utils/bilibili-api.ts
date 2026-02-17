@@ -206,6 +206,13 @@ export function formatDuration(str: string): string {
   return str; // Fallback
 }
 
+export function ensureHttps(url: string): string {
+  if (!url) return "";
+  if (url.startsWith("//")) return `https:${url}`;
+  if (!url.startsWith("http")) return `https://${url}`;
+  return url;
+}
+
 export function getProfileUrl(mid: number): string {
   return `https://space.bilibili.com/${mid}`;
 }
