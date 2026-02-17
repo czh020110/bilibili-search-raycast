@@ -199,12 +199,38 @@ export function formatNumber(num: number): string {
 }
 
 export function formatDuration(str: string): string {
-  // API usually returns "mm:ss" or just seconds?
-  // Video API returns "mm:ss" string like "03:21"
-  // Sometimes it might return seconds number.
-  // If it's already a string with colon, return it.
-  if (String(str).includes(":")) return str;
-  return str; // Fallback
+  if (!str) return "00:00";
+
+  // If it's pure seconds (no colon)
+  if (!String(str).includes(":")) {
+    const seconds = parseInt(str, 10);
+    if (isNaN(seconds)) return str;
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (h > 0) {
+      return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+    } else {
+      return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+    }
+  }
+
+  // If it is mm:ss or hh:mm:ss
+  const parts = str.split(":").map((p) => parseInt(p, 10));
+
+  // If already h:m:s (3 parts), return as is (maybe clean up leading zeros if wanted, but standard is fine)
+  if (parts.length === 3) return str;
+
+  if (parts.length === 2) {
+    let [m, s] = parts;
+    if (m >= 60) {
+      const h = Math.floor(m / 60);
+      m = m % 60;
+      return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+    }
+  }
+
+  return str;
 }
 
 export function ensureHttps(url: string): string {

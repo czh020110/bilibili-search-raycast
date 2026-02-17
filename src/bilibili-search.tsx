@@ -20,6 +20,7 @@ import {
   ArticleItem,
   UserItem,
   formatNumber,
+  formatDuration,
   ensureHttps,
   getVideoDetails,
   VideoStats,
@@ -289,22 +290,25 @@ ${v.description || "No description"}
 
     metadata = (
       <List.Item.Detail.Metadata>
-        <List.Item.Detail.Metadata.Label title="作者" text={v.author} />
+        <List.Item.Detail.Metadata.Label title="Author" text={v.author} />
         <List.Item.Detail.Metadata.Label
-          title="观看次数"
+          title="View"
           text={formatNumber(v.play)}
         />
         <List.Item.Detail.Metadata.Label
-          title="三连"
-          text={`▲ ${formatNumber(like)}   ₿ ${formatNumber(coin)}   ★ ${formatNumber(fav)}   ↪ ${formatNumber(share)}   💬 ${formatNumber(reply)}   ※ ${formatNumber(danmaku)}`}
+          title="Data"
+          text={`▲ ${formatNumber(like)}   ₿ ${formatNumber(coin)}   ★ ${formatNumber(fav)}   ↪ ${formatNumber(share)}   “ ${formatNumber(reply)}   ※ ${formatNumber(danmaku)}`}
         />
-        <List.Item.Detail.Metadata.Label title="时长" text={v.duration} />
         <List.Item.Detail.Metadata.Label
-          title="发布时间"
+          title="Duration"
+          text={formatDuration(v.duration)}
+        />
+        <List.Item.Detail.Metadata.Label
+          title="Publish"
           text={new Date(v.pubdate * 1000).toLocaleString()}
         />
 
-        <List.Item.Detail.Metadata.TagList title="标签">
+        <List.Item.Detail.Metadata.TagList title="Tags">
           {v.tag
             .split(",")
             .slice(0, 5)
