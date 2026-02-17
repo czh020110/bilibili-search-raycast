@@ -46,6 +46,7 @@ export interface VideoItem {
   review: number;
   pubdate: number;
   duration: string;
+  like: number;
   union_page_data?: {
     badge?: string;
   };
@@ -211,6 +212,38 @@ export function ensureHttps(url: string): string {
   if (url.startsWith("//")) return `https:${url}`;
   if (!url.startsWith("http")) return `https://${url}`;
   return url;
+}
+
+export interface VideoStats {
+  view: number;
+  danmaku: number;
+  reply: number;
+  favorite: number;
+  coin: number;
+  share: number;
+  like: number;
+}
+
+export async function getVideoDetails(
+  bvid: string,
+): Promise<VideoStats | null> {
+  const url = `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`;
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        Referer: "https://www.bilibili.com/",
+      },
+    });
+    if (!response.ok) return null;
+    const json = (await response.json()) as any;
+    if (json.code !== 0 || !json.data || !json.data.stat) return null;
+    return json.data.stat as VideoStats;
+  } catch (error) {
+    console.error("Failed to fetch video details:", error);
+    return null;
+  }
 }
 
 export function getProfileUrl(mid: number): string {

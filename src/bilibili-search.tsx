@@ -8,7 +8,7 @@ import {
   Color,
   LaunchProps,
 } from "@raycast/api";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   searchBilibili,
   SearchType,
@@ -21,6 +21,8 @@ import {
   UserItem,
   formatNumber,
   ensureHttps,
+  getVideoDetails,
+  VideoStats,
 } from "./utils/bilibili-api";
 
 interface SearchArguments {
@@ -36,6 +38,7 @@ export default function Command(
   const [isLoading, setIsLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [isShowingDetail, setIsShowingDetail] = useState(true);
+  const [videoStats, setVideoStats] = useState<Record<string, VideoStats>>({});
 
   // Debounce search
   useEffect(() => {
@@ -44,6 +47,7 @@ export default function Command(
       return;
     }
     setPage(1);
+    setVideoStats({}); // Clear stats on new search
   }, [searchText]);
 
   const performSearch = useCallback(
@@ -56,7 +60,30 @@ export default function Command(
         if (newPage === 1) {
           setResults(data);
         } else {
-          setResults((prev) => [...prev, ...data]);
+          setResults((prev) => {
+            // Deduplicate based on BVID for video items, or fallback to simple id check with type guard
+            if (!data.length) return prev;
+
+            // Create a set of existing IDs to check against
+            const existingIds = new Set(
+              prev.map((i) => {
+                if ("bvid" in i) return i.bvid;
+                if ("id" in i) return String(i.id);
+                if ("media_id" in i) return String(i.media_id);
+                return "";
+              }),
+            );
+
+            const newData = data.filter((i) => {
+              let id = "";
+              if ("bvid" in i) id = i.bvid;
+              else if ("id" in i) id = String(i.id);
+              else if ("media_id" in i) id = String(i.media_id);
+              return id ? !existingIds.has(id) : true;
+            });
+
+            return [...prev, ...newData];
+          });
         }
       } catch (error) {
         console.error(error);
@@ -75,6 +102,32 @@ export default function Command(
     const nextPage = page + 1;
     setPage(nextPage);
     performSearch(nextPage);
+  };
+
+  // Debounce selection change
+  const selectionTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  const handleSelectionChange = async (id: string | null) => {
+    // If not video, do nothing
+    if (searchType !== "video") return;
+
+    // Clear previous timeout
+    if (selectionTimeout.current) {
+      clearTimeout(selectionTimeout.current);
+    }
+
+    // If no ID (deselection?), return
+    if (!id) return;
+
+    selectionTimeout.current = setTimeout(async () => {
+      // id is bvid
+      if (videoStats[id]) return; // Already have stats
+
+      const stats = await getVideoDetails(id);
+      if (stats) {
+        setVideoStats((prev) => ({ ...prev, [id]: stats }));
+      }
+    }, 300); // 300ms debounce
   };
 
   const categories: { label: string; value: SearchType }[] = [
@@ -111,6 +164,7 @@ export default function Command(
         hasMore: results.length > 0 && results.length % 20 === 0,
         pageSize: 20,
       }}
+      onSelectionChange={handleSelectionChange}
       searchBarAccessory={
         <List.Dropdown
           tooltip="Search Category"
@@ -127,16 +181,26 @@ export default function Command(
         </List.Dropdown>
       }
     >
-      {results.map((item, index) => (
-        <SearchResultItem
-          key={index}
-          item={item}
-          searchType={searchType}
-          onCycleCategory={cycleCategory}
-          isShowingDetail={isShowingDetail}
-          onToggleDetail={toggleDetail}
-        />
-      ))}
+      {results.map((item, index) => {
+        const id =
+          searchType === "video" ? (item as VideoItem).bvid : String(index);
+        return (
+          <SearchResultItem
+            key={`${id}-${index}`}
+            id={id}
+            item={item}
+            searchType={searchType}
+            onCycleCategory={cycleCategory}
+            isShowingDetail={isShowingDetail}
+            onToggleDetail={toggleDetail}
+            videoStats={
+              searchType === "video"
+                ? videoStats[(item as VideoItem).bvid]
+                : undefined
+            }
+          />
+        );
+      })}
       {results.length === 0 && !isLoading && (
         <List.EmptyView title="No results found" icon={Icon.MagnifyingGlass} />
       )}
@@ -145,17 +209,21 @@ export default function Command(
 }
 
 function SearchResultItem({
+  id,
   item,
   searchType,
   onCycleCategory,
   isShowingDetail,
   onToggleDetail,
+  videoStats,
 }: {
+  id: string;
   item: AnyItem;
   searchType: SearchType;
   onCycleCategory: (dir: 1 | -1) => void;
   isShowingDetail: boolean;
   onToggleDetail: () => void;
+  videoStats?: VideoStats;
 }) {
   let title = "";
   let cover = "";
@@ -211,6 +279,14 @@ function SearchResultItem({
 ${v.description || "No description"}
         `;
 
+    // Use stats from videoStats if available, otherwise use basic info from search result
+    const like = videoStats?.like ?? v.like ?? 0;
+    const coin = videoStats?.coin ?? 0;
+    const fav = videoStats?.favorite ?? v.favorites;
+    const share = videoStats?.share ?? 0;
+    const reply = videoStats?.reply ?? v.review;
+    const danmaku = videoStats?.danmaku ?? v.video_review;
+
     metadata = (
       <List.Item.Detail.Metadata>
         <List.Item.Detail.Metadata.Label title="作者" text={v.author} />
@@ -220,18 +296,14 @@ ${v.description || "No description"}
         />
         <List.Item.Detail.Metadata.Label
           title="三连"
-          text={`▲ ${formatNumber(0)}   ₿ ${formatNumber(0)}   ★ ${formatNumber(v.favorites)}   ↪ ${formatNumber(0)}`}
-          icon={Icon.Star}
+          text={`▲ ${formatNumber(like)}   ₿ ${formatNumber(coin)}   ★ ${formatNumber(fav)}   ↪ ${formatNumber(share)}   💬 ${formatNumber(reply)}   ※ ${formatNumber(danmaku)}`}
         />
         <List.Item.Detail.Metadata.Label title="时长" text={v.duration} />
         <List.Item.Detail.Metadata.Label
           title="发布时间"
           text={new Date(v.pubdate * 1000).toLocaleString()}
         />
-        <List.Item.Detail.Metadata.Label
-          title="评论数量"
-          text={formatNumber(v.review)}
-        />
+
         <List.Item.Detail.Metadata.TagList title="标签">
           {v.tag
             .split(",")
@@ -393,6 +465,7 @@ ${a.desc || "No summary"}
 
   return (
     <List.Item
+      id={id}
       title={title}
       detail={
         <List.Item.Detail markdown={detailMarkdown} metadata={metadata} />

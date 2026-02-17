@@ -14,7 +14,12 @@ async function testSearch() {
       },
     });
     const json = (await response.json()) as any;
-    console.log(JSON.stringify(json.data.result[0], null, 2));
+    const fs = require("fs");
+    fs.writeFileSync(
+      "api_response.json",
+      JSON.stringify(json.data.result[0], null, 2),
+    );
+    console.log("Response written to api_response.json");
   } catch (error) {
     console.error(error);
   }
