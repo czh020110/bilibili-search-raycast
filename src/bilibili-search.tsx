@@ -504,6 +504,9 @@ ${a.desc || "No summary"}
       accessories={
         !isShowingDetail
           ? [
+              {
+                text: `⏯ ${formatNumber((item as any).play || (item as any).view || 0)}`,
+              },
               { text: formatDuration((item as any).duration) },
               {
                 date: (item as any).pubdate

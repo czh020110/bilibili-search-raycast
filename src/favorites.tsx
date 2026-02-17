@@ -57,19 +57,34 @@ export default function Command() {
     fetchFavorites(nextPage);
   };
 
-  const selectionTimeout = useRef<NodeJS.Timeout | null>(null);
-  const handleSelectionChange = async (id: string | null) => {
-    if (selectionTimeout.current) clearTimeout(selectionTimeout.current);
-    if (!id) return;
+  // Batch fetch stats for new items
+  useEffect(() => {
+    const fetchMissingStats = async () => {
+      const missingBvids = favorites
+        .map((item) => item.bvid)
+        .filter((bvid) => !videoStats[bvid]);
 
-    selectionTimeout.current = setTimeout(async () => {
-      if (videoStats[id]) return;
-      const stats = await getVideoDetails(id);
-      if (stats) {
-        setVideoStats((prev) => ({ ...prev, [id]: stats }));
+      if (missingBvids.length === 0) return;
+
+      const newStats: Record<string, VideoStats> = {};
+      const chunkSize = 5;
+      for (let i = 0; i < missingBvids.length; i += chunkSize) {
+        const chunk = missingBvids.slice(i, i + chunkSize);
+        const promises = chunk.map(async (bvid) => {
+          const stats = await getVideoDetails(bvid);
+          if (stats) {
+            newStats[bvid] = stats;
+          }
+        });
+        await Promise.all(promises);
+        setVideoStats((prev) => ({ ...prev, ...newStats }));
       }
-    }, 300);
-  };
+    };
+
+    fetchMissingStats();
+  }, [favorites]);
+
+  const handleSelectionChange = (id: string | null) => {};
 
   if (!isUserLoggedIn) {
     return (
@@ -121,6 +136,9 @@ export default function Command() {
         const reply = stats?.reply || item.review || 0;
         const danmaku = stats?.danmaku || item.video_review || 0;
 
+        const authorName = stats?.owner?.name || item.author;
+        const authorFace = stats?.owner?.face || item.owner?.face;
+
         const detailMarkdown = `
 ![Cover](${cover})
 
@@ -133,11 +151,11 @@ ${description}
           <List.Item.Detail.Metadata>
             <List.Item.Detail.Metadata.Label
               title="Author"
-              text={item.author}
+              text={authorName}
               icon={
-                item.owner?.face
+                authorFace
                   ? {
-                      source: ensureHttps(item.owner.face),
+                      source: ensureHttps(authorFace),
                       mask: Image.Mask.Circle,
                     }
                   : undefined
@@ -155,6 +173,16 @@ ${description}
               title="Publish"
               text={new Date(item.pubdate * 1000).toLocaleString()}
             />
+            {stats?.tag && (
+              <List.Item.Detail.Metadata.TagList title="Tags">
+                {stats.tag
+                  .split(",")
+                  .slice(0, 5)
+                  .map((t) => (
+                    <List.Item.Detail.Metadata.TagList.Item key={t} text={t} />
+                  ))}
+              </List.Item.Detail.Metadata.TagList>
+            )}
           </List.Item.Detail.Metadata>
         );
 
@@ -163,7 +191,7 @@ ${description}
             key={`${item.bvid}-${index}`}
             id={bvid}
             title={title}
-            subtitle={!isShowingDetail ? item.author : undefined}
+            subtitle={!isShowingDetail ? authorName : undefined}
             icon={
               !isShowingDetail
                 ? {
@@ -175,6 +203,7 @@ ${description}
             accessories={
               !isShowingDetail
                 ? [
+                    ...(play > 0 ? [{ text: `⏯ ${formatNumber(play)}` }] : []),
                     { text: formatDuration(item.duration) },
                     {
                       date: new Date(item.pubdate * 1000),

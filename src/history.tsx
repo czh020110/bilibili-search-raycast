@@ -49,6 +49,8 @@ export default function Command() {
     fetchHistory();
   }, [isUserLoggedIn]);
 
+  /* 
+  // Old selection-based fetch
   const selectionTimeout = useRef<NodeJS.Timeout | null>(null);
   const handleSelectionChange = async (id: string | null) => {
     if (selectionTimeout.current) clearTimeout(selectionTimeout.current);
@@ -62,6 +64,42 @@ export default function Command() {
       }
     }, 300);
   };
+  */
+
+  // Batch fetch stats for new items
+  useEffect(() => {
+    const fetchMissingStats = async () => {
+      const missingBvids = history
+        .map((item) => item.bvid)
+        .filter((bvid) => !videoStats[bvid]);
+
+      if (missingBvids.length === 0) return;
+
+      // Fetch in parallel (with some concurrency limit if needed, but 20 is likely fine for modern browsers/node)
+      // Raycast environment node-fetch might handle it.
+      const newStats: Record<string, VideoStats> = {};
+
+      // Split into chunks of 5 to be safe
+      const chunkSize = 5;
+      for (let i = 0; i < missingBvids.length; i += chunkSize) {
+        const chunk = missingBvids.slice(i, i + chunkSize);
+        const promises = chunk.map(async (bvid) => {
+          const stats = await getVideoDetails(bvid);
+          if (stats) {
+            newStats[bvid] = stats;
+          }
+        });
+        await Promise.all(promises);
+        // Update state incrementally to show results faster
+        setVideoStats((prev) => ({ ...prev, ...newStats }));
+      }
+    };
+
+    fetchMissingStats();
+  }, [history]); // Run whenever history list updates
+
+  // Keep selection change handler empty or remove it to avoid double fetching
+  const handleSelectionChange = (id: string | null) => {};
 
   if (!isUserLoggedIn) {
     return (
@@ -117,6 +155,10 @@ export default function Command() {
         const reply = stats?.reply || item.review || 0;
         const danmaku = stats?.danmaku || item.video_review || 0;
 
+        // Use owner from stats if available (it has face usually), else fallback
+        const authorName = stats?.owner?.name || item.author;
+        const authorFace = stats?.owner?.face || item.owner?.face;
+
         const detailMarkdown = `
 ![Cover](${cover})
 
@@ -129,11 +171,11 @@ ${description}
           <List.Item.Detail.Metadata>
             <List.Item.Detail.Metadata.Label
               title="Author"
-              text={item.author}
+              text={authorName}
               icon={
-                item.owner?.face
+                authorFace
                   ? {
-                      source: ensureHttps(item.owner.face),
+                      source: ensureHttps(authorFace),
                       mask: Image.Mask.Circle,
                     }
                   : undefined
@@ -151,6 +193,16 @@ ${description}
               title="Publish"
               text={new Date(item.pubdate * 1000).toLocaleString()}
             />
+            {stats?.tag && (
+              <List.Item.Detail.Metadata.TagList title="Tags">
+                {stats.tag
+                  .split(",")
+                  .slice(0, 5)
+                  .map((t) => (
+                    <List.Item.Detail.Metadata.TagList.Item key={t} text={t} />
+                  ))}
+              </List.Item.Detail.Metadata.TagList>
+            )}
           </List.Item.Detail.Metadata>
         );
 
@@ -159,7 +211,7 @@ ${description}
             key={`${item.bvid}-${index}`}
             id={bvid}
             title={title}
-            subtitle={!isShowingDetail ? item.author : undefined}
+            subtitle={!isShowingDetail ? authorName : undefined}
             icon={
               !isShowingDetail
                 ? {
@@ -171,6 +223,7 @@ ${description}
             accessories={
               !isShowingDetail
                 ? [
+                    ...(play > 0 ? [{ text: `⏯ ${formatNumber(play)}` }] : []),
                     { text: formatDuration(item.duration) },
                     {
                       date: new Date(item.pubdate * 1000),

@@ -189,6 +189,12 @@ export async function getHistory(
     });
     const json = (await response.json()) as any;
     if (json.code === 0 && json.data && json.data.list) {
+      if (json.data.list.length > 0) {
+        console.log(
+          "Raw History Item [0]:",
+          JSON.stringify(json.data.list[0], null, 2),
+        );
+      }
       const list = json.data.list.map((item: any) => ({
         type: "video",
         bvid: item.history.bvid,
@@ -275,6 +281,12 @@ export async function getFavorites(page: number = 1): Promise<VideoItem[]> {
       });
       const resJson = (await resRes.json()) as any;
       if (resJson.code === 0 && resJson.data && resJson.data.medias) {
+        if (resJson.data.medias.length > 0) {
+          console.log(
+            "Raw Favorites Item [0]:",
+            JSON.stringify(resJson.data.medias[0], null, 2),
+          );
+        }
         return resJson.data.medias.map((item: any) => ({
           type: "video",
           bvid: item.bvid,
@@ -468,30 +480,55 @@ export interface VideoStats {
   like: number;
   tag?: string; // Add tag to stats for convenience or create a separate Details interface
   desc?: string;
+  owner?: {
+    mid: number;
+    name: string;
+    face: string;
+  };
 }
 
 export async function getVideoDetails(
   bvid: string,
 ): Promise<VideoStats | null> {
-  const url = `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`;
+  const viewUrl = `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`;
+  const tagsUrl = `https://api.bilibili.com/x/tag/archive/tags?bvid=${bvid}`;
+
   try {
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        Referer: "https://www.bilibili.com/",
-        Cookie: getCookie() || "",
-      },
-    });
-    if (!response.ok) return null;
-    const json = (await response.json()) as any;
-    if (json.code !== 0 || !json.data) return null;
+    const cookie = getCookie() || "";
+    const headers = {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+      Referer: "https://www.bilibili.com/",
+      Cookie: cookie,
+    };
+
+    const [viewRes, tagsRes] = await Promise.all([
+      fetch(viewUrl, { headers }),
+      fetch(tagsUrl, { headers }),
+    ]);
+
+    if (!viewRes.ok) return null;
+    const viewJson = (await viewRes.json()) as any;
+    if (viewJson.code !== 0 || !viewJson.data) return null;
+
+    let tagName = "";
+    try {
+      if (tagsRes.ok) {
+        const tagsJson = (await tagsRes.json()) as any;
+        if (tagsJson.code === 0 && tagsJson.data) {
+          tagName = tagsJson.data.map((t: any) => t.tag_name).join(",");
+        }
+      }
+    } catch (e) {
+      console.error("Failed to parse tags", e);
+    }
 
     // Merge stat and other info
     return {
-      ...json.data.stat,
-      tag: json.data.tag_name, // Typically separate, or we iterate tags
-      desc: json.data.desc,
+      ...viewJson.data.stat,
+      tag: tagName || viewJson.data.tag_name, // Use fetched tags, fallback to category
+      desc: viewJson.data.desc,
+      owner: viewJson.data.owner,
     } as VideoStats;
   } catch (error) {
     console.error("Failed to fetch video details:", error);
