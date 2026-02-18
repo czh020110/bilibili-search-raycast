@@ -24,7 +24,8 @@ import {
   ensureHttps,
   getVideoDetails,
   VideoStats,
-  getRecommendations,
+  getPopularVideos,
+  getFollowings,
 } from "./utils/bilibili-api";
 
 interface SearchArguments {
@@ -56,15 +57,23 @@ export default function Command(
 
   const performSearch = useCallback(
     async (newPage = 1) => {
-      if (!searchText) return;
+      // Allow execution even if searchText is empty to show popular videos
 
       setIsLoading(true);
       try {
         let data: AnyItem[] = [];
-        if (!searchText && newPage === 1) {
-          // Fetch recommendations
-          data = await getRecommendations();
-        } else if (searchText) {
+        if (!searchText) {
+          if (searchType === "video") {
+            // Fetch popular videos (supports pagination)
+            data = await getPopularVideos(newPage);
+          } else if (searchType === "bili_user") {
+            // Fetch followings
+            data = await getFollowings(newPage);
+          } else {
+            // Other categories empty by default
+            data = [];
+          }
+        } else {
           data = await searchBilibili(searchText, searchType, newPage);
         }
         if (newPage === 1) {
@@ -110,9 +119,10 @@ export default function Command(
   }, [searchText]); // Only re-run when searchText changes. searchType change is handled by performSearch logic but we might want to reset if type changes AND we are searching. But for empty search (recommendations) type doesn't matter much or we only show video recommendations.
 
   useEffect(() => {
-    if (searchText) {
-      performSearch(1);
-    }
+    // When searchType changes, we should re-search.
+    // If searchText is empty, it will fetch popular videos (if we decide popular videos are category-agnostic or we want to filter them).
+    // The current getPopularVideos is global, but let's re-trigger to be safe or if we later add category support.
+    performSearch(1);
   }, [searchType]);
 
   const handleLoadMore = () => {
@@ -184,6 +194,7 @@ export default function Command(
       throttle={true}
       pagination={{
         onLoadMore: handleLoadMore,
+        // Popular videos and Search results support pagination
         hasMore: results.length > 0 && results.length % 20 === 0,
         pageSize: 20,
       }}
@@ -205,19 +216,22 @@ export default function Command(
       }
     >
       {results.map((item, index) => {
+        const type = (item.type as SearchType) || searchType;
         const id =
-          searchType === "video" ? (item as VideoItem).bvid : String(index);
+          type === "video" && "bvid" in item
+            ? (item as VideoItem).bvid
+            : String(index);
         return (
           <SearchResultItem
             key={`${id}-${index}`}
             id={id}
             item={item}
-            searchType={searchType}
+            searchType={type}
             onCycleCategory={cycleCategory}
             isShowingDetail={isShowingDetail}
             onToggleDetail={toggleDetail}
             videoStats={
-              searchType === "video"
+              type === "video" && "bvid" in item
                 ? videoStats[(item as VideoItem).bvid]
                 : undefined
             }
@@ -335,7 +349,7 @@ ${v.description || "No description"}
         />
 
         <List.Item.Detail.Metadata.TagList title="Tags">
-          {v.tag
+          {(videoStats?.tag || v.tag || "")
             .split(",")
             .filter((t) => t.trim().length > 0)
             .slice(0, 5)

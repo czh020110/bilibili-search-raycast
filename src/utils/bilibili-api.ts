@@ -425,6 +425,109 @@ export async function getRecommendations(): Promise<VideoItem[]> {
   return [];
 }
 
+export async function getPopularVideos(page: number = 1): Promise<VideoItem[]> {
+  const url = `https://api.bilibili.com/x/web-interface/popular?ps=20&pn=${page}`;
+  const rawCookie = getCookie();
+  const cookie = rawCookie || "buvid3=infoc;";
+
+  console.log(
+    `Fetching popular videos page ${page} with cookie length: ${cookie.length}`,
+  );
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": USER_AGENT,
+        Referer: REFERER,
+        Cookie: cookie,
+      },
+    });
+
+    if (!response.ok) {
+      console.error(
+        `Popular API validation failed: ${response.status} ${response.statusText}`,
+      );
+    }
+
+    const json = (await response.json()) as any;
+    console.log(`Popular API Response Code: ${json.code}`);
+
+    if (json.code === 0 && json.data && json.data.list) {
+      console.log(`Found ${json.data.list.length} popular videos`);
+      return json.data.list.map((item: any) => ({
+        type: "video",
+        bvid: item.bvid,
+        title: item.title,
+        pic: item.pic,
+        author: item.owner.name,
+        arcurl:
+          item.short_link_v2 || `https://www.bilibili.com/video/${item.bvid}`,
+        duration: formatDuration(String(item.duration)),
+        pubdate: item.pubdate,
+        id: item.aid,
+        mid: item.owner.mid,
+        typename: item.tname,
+        aid: item.aid,
+        description: item.desc || "",
+        play: item.stat.view,
+        video_review: item.stat.danmaku,
+        favorites: item.stat.favorite,
+        tag: item.rcmd_reason?.content || "",
+        review: item.stat.reply,
+        like: item.stat.like,
+        owner: {
+          mid: item.owner.mid,
+          name: item.owner.name,
+          face: item.owner.face,
+        },
+      }));
+    } else {
+      console.log("Popular API returned no list:", JSON.stringify(json));
+    }
+  } catch (e) {
+    console.error("Failed to fetch popular videos", e);
+  }
+  return [];
+}
+
+export async function getFollowings(page: number = 1): Promise<UserItem[]> {
+  const mid = await getSelfMid();
+  if (!mid) return [];
+
+  const url = `https://api.bilibili.com/x/relation/followings?vmid=${mid}&pn=${page}&ps=20&order=desc`;
+  const cookie = getCookie();
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": USER_AGENT,
+        Referer: REFERER,
+        Cookie: cookie || "",
+      },
+    });
+    const json = (await response.json()) as any;
+    if (json.code === 0 && json.data && json.data.list) {
+      return json.data.list.map((item: any) => ({
+        type: "bili_user",
+        mid: item.mid,
+        uname: item.uname,
+        usign: item.sign,
+        upic: item.face,
+        videos: 0, // API doesn't return video count directly here
+        fans: 0, // API doesn't return fans count directly here
+        level: 0, // API doesn't return level directly here
+        gender: 0,
+        is_live: 0,
+        room_id: 0,
+        res: [],
+      }));
+    }
+  } catch (e) {
+    console.error("Failed to fetch followings", e);
+  }
+  return [];
+}
+
 export async function searchBilibili(
   keyword: string,
   type: SearchType,
