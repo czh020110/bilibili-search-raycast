@@ -7,7 +7,10 @@
 
 /* eslint-disable @typescript-eslint/ban-types */
 
-type ExtensionPreferences = {}
+type ExtensionPreferences = {
+  /** Default Favorite Folder - The name of the favorite folder to open by default. If empty or not found, the first folder will be used. */
+  "defaultFavoriteFolder"?: string
+}
 
 /** Preferences accessible in all the extension's commands */
 declare type Preferences = ExtensionPreferences

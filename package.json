@@ -45,6 +45,16 @@
       ]
     }
   ],
+  "preferences": [
+    {
+      "name": "defaultFavoriteFolder",
+      "type": "textfield",
+      "required": false,
+      "title": "Default Favorite Folder",
+      "description": "The name of the favorite folder to open by default. If empty or not found, the first folder will be used.",
+      "placeholder": "e.g. Watch Later"
+    }
+  ],
   "dependencies": {
     "@raycast/api": "^1.104.6",
     "@raycast/utils": "^2.2.2",

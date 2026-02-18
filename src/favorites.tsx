@@ -1,4 +1,11 @@
-import { ActionPanel, Action, List, Image, Icon } from "@raycast/api";
+import {
+  ActionPanel,
+  Action,
+  List,
+  Image,
+  Icon,
+  getPreferenceValues,
+} from "@raycast/api";
 import { useEffect, useMemo, useState } from "react";
 import {
   getFavorites,
@@ -91,8 +98,23 @@ export default function Command() {
         const fs = await getFavoriteFolders(mid);
         setFolders(fs);
         if (fs.length > 0) {
+          const preferences = getPreferenceValues<{
+            defaultFavoriteFolder?: string;
+          }>();
+          const defaultName = preferences.defaultFavoriteFolder?.trim();
+
+          let targetFolder = fs[0];
+          if (defaultName) {
+            const found = fs.find(
+              (f) => f.title.trim().toLowerCase() === defaultName.toLowerCase(),
+            );
+            if (found) {
+              targetFolder = found;
+            }
+          }
+
           // Default to first folder, or we could default to "all"
-          setSelectedFolderId(String(fs[0].id));
+          setSelectedFolderId(String(targetFolder.id));
           return;
         }
       }
@@ -239,19 +261,28 @@ export default function Command() {
         )
       ) : (
         // Flat list for single folder
-        <>
-          {items.map((item, index) => (
-            <FavItem
-              key={`${item.bvid}-${index}`}
-              item={item}
-              stats={videoStats[item.bvid]}
-              isShowingDetail={isShowingDetail}
-              onToggleDetail={() => setIsShowingDetail((v) => !v)}
-            />
-          ))}
-        </>
+        items.map((item, index) => (
+          <FavItem
+            key={`${item.bvid}-${index}`}
+            item={item}
+            stats={videoStats[item.bvid]}
+            isShowingDetail={isShowingDetail}
+            onToggleDetail={() => setIsShowingDetail((v) => !v)}
+          />
+        ))
       )}
-      <List.EmptyView title="No favorites found" icon={Icon.Star} />
+
+      {/* Only show "No favorites found" if we are searching (in any mode) OR browsing a single folder, AND result is empty */}
+      {/* Specifically: 
+          1. "all" mode: show if searchText is present AND items is empty. (If no text, we showed the other empty view above)
+          2. single mode: show if items is empty (whether searching or not) 
+      */}
+      {((selectedFolderId === "all" && !!searchText) ||
+        selectedFolderId !== "all") &&
+        items.length === 0 &&
+        !isLoading && (
+          <List.EmptyView title="No favorites found" icon={Icon.Star} />
+        )}
     </List>
   );
 }
