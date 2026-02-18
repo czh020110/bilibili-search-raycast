@@ -173,10 +173,15 @@ export interface UserItem {
   upic: string;
   videos: number;
   fans: number;
+  following?: number; // Added following count
   level: number;
   gender: number;
   is_live: number;
   room_id: number;
+  official_verify?: {
+    type: number;
+    desc: string;
+  };
   res: Array<{
     aid: number;
     bvid: string;
@@ -187,6 +192,44 @@ export interface UserItem {
     play: string;
     duration: string;
   }>;
+}
+
+// ... existing code ...
+
+export async function getUserCard(mid: number): Promise<UserItem | null> {
+  const url = `https://api.bilibili.com/x/web-interface/card?mid=${mid}&photo=true`;
+  const headers = {
+    "User-Agent": USER_AGENT,
+    Referer: REFERER,
+    Cookie: getCookie() || "",
+  };
+
+  try {
+    const res = await fetch(url, { headers });
+    const json = (await res.json()) as any;
+    if (json.code === 0 && json.data && json.data.card) {
+      const card = json.data.card;
+      return {
+        type: "bili_user",
+        mid: card.mid,
+        uname: card.name,
+        usign: card.sign,
+        upic: card.face,
+        videos: json.data.archive_count || 0,
+        fans: card.fans,
+        following: card.attention,
+        level: card.level_info?.current_level || 0,
+        gender: card.sex === "男" ? 1 : card.sex === "女" ? 2 : 0,
+        is_live: 0, // Not always available here
+        room_id: 0,
+        official_verify: card.official_verify,
+        res: [],
+      };
+    }
+  } catch (e) {
+    console.error(`Failed to fetch user card for ${mid}`, e);
+  }
+  return null;
 }
 
 export async function getHistory(

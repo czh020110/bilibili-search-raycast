@@ -18,7 +18,6 @@ import {
   MovieItem,
   LiveItem,
   ArticleItem,
-  UserItem,
   formatNumber,
   formatDuration,
   ensureHttps,
@@ -26,6 +25,8 @@ import {
   VideoStats,
   getPopularVideos,
   getFollowings,
+  getUserCard,
+  UserItem,
 } from "./utils/bilibili-api";
 
 interface SearchArguments {
@@ -42,6 +43,7 @@ export default function Command(
   const [page, setPage] = useState(1);
   const [isShowingDetail, setIsShowingDetail] = useState(true);
   const [videoStats, setVideoStats] = useState<Record<string, VideoStats>>({});
+  const [userStats, setUserStats] = useState<Record<string, UserItem>>({});
 
   // Debounce search
   useEffect(() => {
@@ -53,6 +55,8 @@ export default function Command(
     */
     setPage(1);
     setVideoStats({}); // Clear stats on new search
+    // Note: We might want to clear userStats too, or keep them cached.
+    // Let's keep userStats cached for now as mids are stable.
   }, [searchText]);
 
   const performSearch = useCallback(
@@ -62,16 +66,46 @@ export default function Command(
       setIsLoading(true);
       try {
         let data: AnyItem[] = [];
-        if (!searchText) {
-          if (searchType === "video") {
+        if (!searchText || searchText.startsWith(":")) {
+          if (searchType === "video" && !searchText) {
             // Fetch popular videos (supports pagination)
             data = await getPopularVideos(newPage);
           } else if (searchType === "bili_user") {
             // Fetch followings
-            data = await getFollowings(newPage);
+            // If searchText starts with ":", we use it to filter locally.
+            // But we still need to fetch the list first.
+            // For now, let's just fetch normal followings.
+            // If user typed ":keyword", we might want to fetch *more* pages or just filter current page?
+            // "Search IN current followings" -> implies filtering what is there or what we fetch.
+            // Let's fetch normal page and filter in the render or state update?
+            // Better: fetch and filter here if we want to support "search".
+            // But getFollowings(page) returns a page.
+            // If I type ":test", and test is on page 2, fetching page 1 won't find it.
+            // A true "search" needs API. Since API is 404, we rely on filtering what we have.
+            // To make it useful, if ":" is detecting, maybe we should fetch MORE pages?
+            // Limiting to normal pagination for safety.
+
+            const followings = await getFollowings(newPage);
+
+            if (searchText.startsWith(":")) {
+              const keyword = searchText.slice(1).trim().toLowerCase();
+              if (keyword) {
+                data = followings.filter((u) =>
+                  u.uname.toLowerCase().includes(keyword),
+                );
+              } else {
+                data = followings;
+              }
+            } else {
+              data = followings;
+            }
           } else {
-            // Other categories empty by default
-            data = [];
+            if (searchText) {
+              // Should not happen if we check !searchText, but added for safety if logic changes
+              data = await searchBilibili(searchText, searchType, newPage);
+            } else {
+              data = [];
+            }
           }
         } else {
           data = await searchBilibili(searchText, searchType, newPage);
@@ -161,6 +195,36 @@ export default function Command(
     fetchMissingStats();
   }, [results, searchType]);
 
+  // Batch fetch stats for users
+  useEffect(() => {
+    if (searchType !== "bili_user") return;
+
+    const fetchMissingUserStats = async () => {
+      const missingMids = results
+        .filter((item): item is UserItem => item.type === "bili_user")
+        .map((item) => item.mid)
+        .filter((mid) => !userStats[mid]);
+
+      if (missingMids.length === 0) return;
+
+      const newUserStats: Record<string, UserItem> = {};
+      const chunkSize = 5;
+      for (let i = 0; i < missingMids.length; i += chunkSize) {
+        const chunk = missingMids.slice(i, i + chunkSize);
+        const promises = chunk.map(async (mid) => {
+          const stats = await getUserCard(mid);
+          if (stats) {
+            newUserStats[mid] = stats;
+          }
+        });
+        await Promise.all(promises);
+        setUserStats((prev) => ({ ...prev, ...newUserStats }));
+      }
+    };
+
+    fetchMissingUserStats();
+  }, [results, searchType]);
+
   const handleSelectionChange = async (id: string | null) => {};
 
   const categories: { label: string; value: SearchType }[] = [
@@ -235,6 +299,11 @@ export default function Command(
                 ? videoStats[(item as VideoItem).bvid]
                 : undefined
             }
+            userStats={
+              type === "bili_user"
+                ? userStats[(item as UserItem).mid]
+                : undefined
+            }
           />
         );
       })}
@@ -253,6 +322,7 @@ function SearchResultItem({
   isShowingDetail,
   onToggleDetail,
   videoStats,
+  userStats,
 }: {
   id: string;
   item: AnyItem;
@@ -261,6 +331,7 @@ function SearchResultItem({
   isShowingDetail: boolean;
   onToggleDetail: () => void;
   videoStats?: VideoStats;
+  userStats?: UserItem;
 }) {
   let title = "";
   let cover = "";
@@ -480,30 +551,60 @@ ${a.desc || "No summary"}
     );
   } else if (searchType === "bili_user") {
     const u = item as UserItem;
-    title = u.uname;
-    cover = ensureHttps(u.upic);
-    url = `https://space.bilibili.com/${u.mid}`;
+    // Use userStats if available, otherwise fallback to item data
+    const stats = userStats || u;
+
+    title = stats.uname;
+    cover = ensureHttps(stats.upic);
+    url = `https://space.bilibili.com/${stats.mid}`;
 
     detailMarkdown = `
 ![Avatar](${cover})
 
 # ${title}
 
-**Bio**: ${u.usign}
-**Level**: ${u.level}
+${stats.usign || "No bio"}
         `;
 
     metadata = (
       <List.Item.Detail.Metadata>
         <List.Item.Detail.Metadata.Label
+          title="Name"
+          text={stats.uname}
+          icon={
+            stats.upic
+              ? { source: ensureHttps(stats.upic), mask: Image.Mask.Circle }
+              : undefined
+          }
+        />
+        <List.Item.Detail.Metadata.Label title="UID" text={String(stats.mid)} />
+        {stats.official_verify && stats.official_verify.desc && (
+          <List.Item.Detail.Metadata.Label
+            title="Title"
+            text={stats.official_verify.desc}
+            icon={Icon.CheckCircle}
+          />
+        )}
+        <List.Item.Detail.Metadata.Label
+          title="Level"
+          text={`Lv.${stats.level}`}
+        />
+        <List.Item.Detail.Metadata.Label
           title="Fans"
-          text={formatNumber(u.fans)}
+          text={formatNumber(stats.fans)}
+        />
+        <List.Item.Detail.Metadata.Label
+          title="Following"
+          text={formatNumber(stats.following || 0)}
         />
         <List.Item.Detail.Metadata.Label
           title="Videos"
-          text={formatNumber(u.videos)}
+          text={formatNumber(stats.videos)}
         />
-        <List.Item.Detail.Metadata.Label title="UID" text={String(u.mid)} />
+        <List.Item.Detail.Metadata.Label
+          title="Bio"
+          text={stats.usign || "-"}
+        />
       </List.Item.Detail.Metadata>
     );
   }
@@ -514,30 +615,41 @@ ${a.desc || "No summary"}
       title={title}
       subtitle={
         !isShowingDetail
-          ? (item as any).author || (item as any).uname
+          ? searchType === "bili_user"
+            ? userStats?.usign || (item as UserItem).usign || ""
+            : (item as any).author || (item as any).uname
           : undefined
       }
       icon={
         !isShowingDetail
-          ? { source: cover, mask: Image.Mask.RoundedRectangle }
+          ? { source: cover, mask: Image.Mask.Circle }
           : undefined
       }
       accessories={
         !isShowingDetail
-          ? [
-              {
-                text: `⏯ ${formatNumber((item as any).play || (item as any).view || 0)}`,
-              },
-              { text: formatDuration((item as any).duration) },
-              {
-                date: (item as any).pubdate
-                  ? new Date((item as any).pubdate * 1000)
-                  : undefined,
-                tooltip: (item as any).pubdate
-                  ? new Date((item as any).pubdate * 1000).toLocaleString()
-                  : undefined,
-              },
-            ]
+          ? searchType === "bili_user"
+            ? [
+                {
+                  text: `Fans: ${formatNumber(userStats?.fans ?? (item as UserItem).fans)}`,
+                },
+                {
+                  text: `Videos: ${formatNumber(userStats?.videos ?? (item as UserItem).videos)}`,
+                },
+              ]
+            : [
+                {
+                  text: `⏯ ${formatNumber((item as any).play || (item as any).view || 0)}`,
+                },
+                { text: formatDuration((item as any).duration) },
+                {
+                  date: (item as any).pubdate
+                    ? new Date((item as any).pubdate * 1000)
+                    : undefined,
+                  tooltip: (item as any).pubdate
+                    ? new Date((item as any).pubdate * 1000).toLocaleString()
+                    : undefined,
+                },
+              ]
           : undefined
       }
       detail={
