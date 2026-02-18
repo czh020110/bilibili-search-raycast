@@ -293,6 +293,7 @@ export async function getFavoriteFolders(
 export async function getFavorites(
   mediaId?: number,
   page: number = 1,
+  keyword: string = "",
 ): Promise<VideoItem[]> {
   const cookie = getCookie();
   if (!cookie) return [];
@@ -312,7 +313,9 @@ export async function getFavorites(
   if (!targetMediaId) return [];
 
   try {
-    const resUrl = `https://api.bilibili.com/x/v3/fav/resource/list?media_id=${targetMediaId}&ps=20&pn=${page}&keyword=&order=mtime&type=0&tid=0&platform=web`;
+    const resUrl = `https://api.bilibili.com/x/v3/fav/resource/list?media_id=${targetMediaId}&ps=20&pn=${page}&keyword=${encodeURIComponent(
+      keyword,
+    )}&order=mtime&type=0&tid=0&platform=web`;
     const resRes = await fetch(resUrl, {
       headers: { Cookie: cookie, "User-Agent": USER_AGENT },
     });
@@ -351,6 +354,27 @@ export async function getFavorites(
   }
 
   return [];
+  return [];
+}
+
+export async function getAllFavorites(
+  mediaId: number,
+  keyword: string = "",
+): Promise<VideoItem[]> {
+  const allItems: VideoItem[] = [];
+  let page = 1;
+
+  while (true) {
+    const items = await getFavorites(mediaId, page, keyword);
+    if (items.length === 0) break;
+    allItems.push(...items);
+    if (items.length < 20) break; // Less than page size means end of list
+    page++;
+    // Add a small delay to be nice to the API
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  return allItems;
 }
 
 export async function getRecommendations(): Promise<VideoItem[]> {

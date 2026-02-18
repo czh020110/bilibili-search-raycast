@@ -11,6 +11,7 @@ import {
   getFavoriteFolders,
   FavoriteFolder,
   getSelfMid,
+  getAllFavorites,
 } from "./utils/bilibili-api";
 import { isLoggedIn } from "./utils/auth";
 
@@ -18,6 +19,7 @@ export default function Command() {
   const [items, setItems] = useState<VideoItem[]>([]);
   const [folders, setFolders] = useState<FavoriteFolder[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string>("");
+  const [searchText, setSearchText] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isShowingDetail, setIsShowingDetail] = useState(true);
   const [page, setPage] = useState(1);
@@ -26,22 +28,50 @@ export default function Command() {
 
   const loggedIn = useMemo(() => isLoggedIn(), []);
 
-  const fetchPage = async (pn: number) => {
+  const fetchPage = async (pn: number, query: string = "") => {
     setIsLoading(true);
     try {
-      const fid = selectedFolderId ? parseInt(selectedFolderId) : undefined;
-      const data = await getFavorites(fid, pn);
+      if (selectedFolderId === "all") {
+        if (!query) {
+          // If no query in "All" mode, maybe just show empty or dont load anything to save resources
+          // Or load from all folders page 1? keeping it empty for now as per plan
+          setItems([]);
+          setHasMore(false);
+          setIsLoading(false);
+          return;
+        }
 
-      if (pn === 1) {
-        setItems(data);
+        // Search in all folders
+        const allItems: VideoItem[] = [];
+        const results = await Promise.all(
+          folders.map(async (folder) => {
+            // Fetch all matches in this folder
+            const folderItems = await getAllFavorites(folder.id, query);
+            return folderItems.map((item) => ({
+              ...item,
+              typename: folder.title,
+            }));
+          }),
+        );
+        results.forEach((res) => allItems.push(...res));
+        setItems(allItems);
+        setHasMore(false); // Search result is all-in-one
       } else {
-        setItems((prev) => {
-          const existing = new Set(prev.map((p) => p.bvid));
-          return [...prev, ...data.filter((d) => !existing.has(d.bvid))];
-        });
+        // Single folder
+        const fid = parseInt(selectedFolderId);
+        if (!isNaN(fid)) {
+          const data = await getFavorites(fid, pn, query);
+          if (pn === 1) {
+            setItems(data);
+          } else {
+            setItems((prev) => {
+              const existing = new Set(prev.map((p) => p.bvid));
+              return [...prev, ...data.filter((d) => !existing.has(d.bvid))];
+            });
+          }
+          setHasMore(data.length >= 20);
+        }
       }
-
-      setHasMore(data.length >= 20);
     } catch (e) {
       console.error("Failed to fetch favorites", e);
     } finally {
@@ -61,12 +91,13 @@ export default function Command() {
         const fs = await getFavoriteFolders(mid);
         setFolders(fs);
         if (fs.length > 0) {
+          // Default to first folder, or we could default to "all"
           setSelectedFolderId(String(fs[0].id));
           return;
         }
       }
       // Fallback if no folders found or mid failed
-      fetchPage(1);
+      setIsLoading(false);
     }
 
     loadFolders();
@@ -75,13 +106,13 @@ export default function Command() {
   useEffect(() => {
     if (!selectedFolderId) return;
 
-    // 每次切换文件夹清空状态
+    // Reset state on folder or search change
     setItems([]);
     setVideoStats({});
     setPage(1);
     setHasMore(true);
-    fetchPage(1);
-  }, [selectedFolderId]);
+    fetchPage(1, searchText);
+  }, [selectedFolderId, searchText]);
 
   useEffect(() => {
     const run = async () => {
@@ -144,6 +175,8 @@ export default function Command() {
       isLoading={isLoading}
       isShowingDetail={isShowingDetail}
       searchBarPlaceholder="Search favorites..."
+      onSearchTextChange={setSearchText}
+      throttle
       searchBarAccessory={
         folders.length > 0 ? (
           <List.Dropdown
@@ -151,6 +184,12 @@ export default function Command() {
             value={selectedFolderId}
             onChange={setSelectedFolderId}
           >
+            <List.Dropdown.Item
+              key="all"
+              title="All Favorites"
+              value="all"
+              icon={Icon.Globe}
+            />
             {folders.map((f) => (
               <List.Dropdown.Item
                 key={f.id}
@@ -165,21 +204,53 @@ export default function Command() {
         onLoadMore: () => {
           const next = page + 1;
           setPage(next);
-          fetchPage(next);
+          fetchPage(next, searchText);
         },
         hasMore,
         pageSize: 20,
       }}
     >
-      {items.map((item, index) => (
-        <FavItem
-          key={`${item.bvid}-${index}`}
-          item={item}
-          stats={videoStats[item.bvid]}
-          isShowingDetail={isShowingDetail}
-          onToggleDetail={() => setIsShowingDetail((v) => !v)}
-        />
-      ))}
+      {selectedFolderId === "all" ? (
+        items.length === 0 && !isLoading && !searchText ? (
+          <List.EmptyView
+            icon={Icon.MagnifyingGlass}
+            title="Type to search all favorites"
+            description="Search across all your favorite folders"
+          />
+        ) : (
+          // Group by folder (using typename we hacked in)
+          Array.from(new Set(items.map((i) => i.typename))).map(
+            (folderName) => (
+              <List.Section key={folderName} title={folderName}>
+                {items
+                  .filter((i) => i.typename === folderName)
+                  .map((item, index) => (
+                    <FavItem
+                      key={`${item.bvid}-${index}`}
+                      item={item}
+                      stats={videoStats[item.bvid]}
+                      isShowingDetail={isShowingDetail}
+                      onToggleDetail={() => setIsShowingDetail((v) => !v)}
+                    />
+                  ))}
+              </List.Section>
+            ),
+          )
+        )
+      ) : (
+        // Flat list for single folder
+        <>
+          {items.map((item, index) => (
+            <FavItem
+              key={`${item.bvid}-${index}`}
+              item={item}
+              stats={videoStats[item.bvid]}
+              isShowingDetail={isShowingDetail}
+              onToggleDetail={() => setIsShowingDetail((v) => !v)}
+            />
+          ))}
+        </>
+      )}
       <List.EmptyView title="No favorites found" icon={Icon.Star} />
     </List>
   );
