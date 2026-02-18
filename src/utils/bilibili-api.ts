@@ -11,8 +11,23 @@ export type SearchType =
   | "media_ft"
   | "live"
   | "article"
+  | "video"
+  | "media_bangumi"
+  | "media_ft"
+  | "live"
+  | "article"
   | "bili_user";
-  
+
+export interface FavoriteFolder {
+  id: number;
+  fid: number;
+  mid: number;
+  attr: number;
+  title: string;
+  fav_state: number;
+  media_count: number;
+}
+
 async function getVideoTags(bvid: string, headers: Record<string, string>) {
   const tagUrl = `https://api.bilibili.com/x/web-interface/view/detail/tag?bvid=${bvid}`;
   const res = await fetch(tagUrl, { headers });
@@ -237,89 +252,99 @@ export async function getHistory(
   }
 }
 
-export async function getFavorites(page: number = 1): Promise<VideoItem[]> {
+export async function getSelfMid(): Promise<number | null> {
   const cookie = getCookie();
-  if (!cookie) return [];
-
-  // For simplicity, we fetch the default favorite folder (usually media_id is needed, but we can list all folders first,
-  // or just fetch the first one. Let's try to fetch all resources from default one if possible, or just list recently favorited resources if there's an API)
-  // Actually, https://api.bilibili.com/x/v3/fav/resource/list?media_id={id}&pn={pn}&ps={ps}
-  // We need to find the default folder id first.
-  // https://api.bilibili.com/x/v3/fav/folder/created/list-all?up_mid={mid}
-  // but we might need user's mid.
-  // Easier way: https://api.bilibili.com/x/v2/fav/video/default <-- THIS IS OLD but might work?
-  // Let's iterate folders. But we need my own mid.
-  // Let's try https://api.bilibili.com/x/web-interface/nav to get my mid first, or just assume we can get favorites differently.
-
-  // Alternative: We can just use the "toview" (Watch Later) as it is often what people want, or truly favorites.
-  // Let's implement getting the first folder's content.
-
-  // 1. Get My Info for MID
-  let mid = "";
+  if (!cookie) return null;
   try {
     const navRes = await fetch("https://api.bilibili.com/x/web-interface/nav", {
       headers: { Cookie: cookie, "User-Agent": USER_AGENT },
     });
     const navJson = (await navRes.json()) as any;
     if (navJson.code === 0) {
-      mid = navJson.data.mid;
+      return navJson.data.mid;
     }
   } catch (e) {
-    console.error(e);
+    console.error("Failed to fetch self mid", e);
   }
+  return null;
+}
 
-  if (!mid) return [];
+export async function getFavoriteFolders(
+  mid: number,
+): Promise<FavoriteFolder[]> {
+  const cookie = getCookie();
+  if (!cookie) return [];
 
-  // 2. Get Created Favorite Folders
   try {
     const folderRes = await fetch(
       `https://api.bilibili.com/x/v3/fav/folder/created/list-all?up_mid=${mid}`,
       { headers: { Cookie: cookie, "User-Agent": USER_AGENT } },
     );
     const folderJson = (await folderRes.json()) as any;
-    if (
-      folderJson.code === 0 &&
-      folderJson.data &&
-      folderJson.data.list &&
-      folderJson.data.list.length > 0
-    ) {
-      const media_id = folderJson.data.list[0].id; // Default favorites folder
+    if (folderJson.code === 0 && folderJson.data && folderJson.data.list) {
+      return folderJson.data.list as FavoriteFolder[];
+    }
+  } catch (e) {
+    console.error("Failed to fetch favorite folders", e);
+  }
+  return [];
+}
 
-      // 3. Get Resources in Folder
-      const resUrl = `https://api.bilibili.com/x/v3/fav/resource/list?media_id=${media_id}&ps=20&pn=${page}&keyword=&order=mtime&type=0&tid=0&platform=web`;
-      const resRes = await fetch(resUrl, {
-        headers: { Cookie: cookie, "User-Agent": USER_AGENT },
-      });
-      const resJson = (await resRes.json()) as any;
-      if (resJson.code === 0 && resJson.data && resJson.data.medias) {
-        if (resJson.data.medias.length > 0) {
-          console.log(
-            "Raw Favorites Item [0]:",
-            JSON.stringify(resJson.data.medias[0], null, 2),
-          );
-        }
-        return resJson.data.medias.map((item: any) => ({
-          type: "video",
-          bvid: item.bvid,
-          title: item.title,
-          pic: item.cover,
-          author: item.upper.name,
-          arcurl: `https://www.bilibili.com/video/${item.bvid}`,
-          duration: formatDuration(item.duration), // API returns seconds number usually, but let's check. actually item.duration is seconds
-          pubdate: item.ctime,
-          id: item.id,
-          mid: item.upper.mid,
-          typename: "",
-          aid: item.id,
-          description: item.intro,
-          play: item.cnt_info.play,
-          video_review: item.cnt_info.danmaku,
-          favorites: item.cnt_info.collect,
-          tag: "",
-          review: item.cnt_info.reply,
-          like: 0,
-        }));
+export async function getFavorites(
+  mediaId?: number,
+  page: number = 1,
+): Promise<VideoItem[]> {
+  const cookie = getCookie();
+  if (!cookie) return [];
+
+  let targetMediaId = mediaId;
+
+  if (!targetMediaId) {
+    const mid = await getSelfMid();
+    if (mid) {
+      const folders = await getFavoriteFolders(mid);
+      if (folders.length > 0) {
+        targetMediaId = folders[0].id; // Default to first folder
       }
+    }
+  }
+
+  if (!targetMediaId) return [];
+
+  try {
+    const resUrl = `https://api.bilibili.com/x/v3/fav/resource/list?media_id=${targetMediaId}&ps=20&pn=${page}&keyword=&order=mtime&type=0&tid=0&platform=web`;
+    const resRes = await fetch(resUrl, {
+      headers: { Cookie: cookie, "User-Agent": USER_AGENT },
+    });
+    const resJson = (await resRes.json()) as any;
+    if (resJson.code === 0 && resJson.data && resJson.data.medias) {
+      if (resJson.data.medias.length > 0 && page === 1) {
+        console.log(
+          "Raw Favorites Item [0]:",
+          JSON.stringify(resJson.data.medias[0], null, 2),
+        );
+      }
+      return resJson.data.medias.map((item: any) => ({
+        type: "video",
+        bvid: item.bvid,
+        title: item.title,
+        pic: item.cover,
+        author: item.upper.name,
+        arcurl: `https://www.bilibili.com/video/${item.bvid}`,
+        duration: formatDuration(item.duration),
+        pubdate: item.ctime,
+        id: item.id,
+        mid: item.upper.mid,
+        typename: "",
+        aid: item.id,
+        description: item.intro,
+        play: item.cnt_info.play,
+        video_review: item.cnt_info.danmaku,
+        favorites: item.cnt_info.collect,
+        tag: "",
+        review: item.cnt_info.reply,
+        like: 0,
+      }));
     }
   } catch (e) {
     console.error("Failed to fetch favorites", e);

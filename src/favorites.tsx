@@ -8,11 +8,16 @@ import {
   ensureHttps,
   getVideoDetails,
   VideoStats,
+  getFavoriteFolders,
+  FavoriteFolder,
+  getSelfMid,
 } from "./utils/bilibili-api";
 import { isLoggedIn } from "./utils/auth";
 
 export default function Command() {
   const [items, setItems] = useState<VideoItem[]>([]);
+  const [folders, setFolders] = useState<FavoriteFolder[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
   const [isShowingDetail, setIsShowingDetail] = useState(true);
   const [page, setPage] = useState(1);
@@ -24,7 +29,8 @@ export default function Command() {
   const fetchPage = async (pn: number) => {
     setIsLoading(true);
     try {
-      const data = await getFavorites(pn);
+      const fid = selectedFolderId ? parseInt(selectedFolderId) : undefined;
+      const data = await getFavorites(fid, pn);
 
       if (pn === 1) {
         setItems(data);
@@ -48,13 +54,34 @@ export default function Command() {
       setIsLoading(false);
       return;
     }
-    // 每次进入命令清空状态
+
+    async function loadFolders() {
+      const mid = await getSelfMid();
+      if (mid) {
+        const fs = await getFavoriteFolders(mid);
+        setFolders(fs);
+        if (fs.length > 0) {
+          setSelectedFolderId(String(fs[0].id));
+          return;
+        }
+      }
+      // Fallback if no folders found or mid failed
+      fetchPage(1);
+    }
+
+    loadFolders();
+  }, [loggedIn]);
+
+  useEffect(() => {
+    if (!selectedFolderId) return;
+
+    // 每次切换文件夹清空状态
     setItems([]);
     setVideoStats({});
     setPage(1);
     setHasMore(true);
     fetchPage(1);
-  }, [loggedIn]);
+  }, [selectedFolderId]);
 
   useEffect(() => {
     const run = async () => {
@@ -117,6 +144,23 @@ export default function Command() {
       isLoading={isLoading}
       isShowingDetail={isShowingDetail}
       searchBarPlaceholder="Search favorites..."
+      searchBarAccessory={
+        folders.length > 0 ? (
+          <List.Dropdown
+            tooltip="Select Favorite Folder"
+            value={selectedFolderId}
+            onChange={setSelectedFolderId}
+          >
+            {folders.map((f) => (
+              <List.Dropdown.Item
+                key={f.id}
+                title={`${f.title} (${f.media_count})`}
+                value={String(f.id)}
+              />
+            ))}
+          </List.Dropdown>
+        ) : undefined
+      }
       pagination={{
         onLoadMore: () => {
           const next = page + 1;
