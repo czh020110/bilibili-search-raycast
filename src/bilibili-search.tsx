@@ -463,7 +463,7 @@ ${v.description || "No description"}
           {(videoStats?.tag || v.tag || "")
             .split(",")
             .filter((t) => t.trim().length > 0)
-            .slice(0, 5)
+
             .map((t) => (
               <List.Item.Detail.Metadata.TagList.Item key={t} text={t} />
             ))}

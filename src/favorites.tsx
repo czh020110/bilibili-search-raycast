@@ -323,7 +323,7 @@ function FavItem({
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean)
-      .slice(0, 5);
+      .filter(Boolean);
   }, [stats?.tag]);
 
   const detailMarkdown = useMemo(() => {
