@@ -27,6 +27,9 @@ import {
   getFollowings,
   getUserCard,
   UserItem,
+  checkFollowingsChanged,
+  getCachedUserStats,
+  saveCachedUserStats,
 } from "./utils/bilibili-api";
 
 interface SearchArguments {
@@ -44,6 +47,16 @@ export default function Command(
   const [isShowingDetail, setIsShowingDetail] = useState(true);
   const [videoStats, setVideoStats] = useState<Record<string, VideoStats>>({});
   const [userStats, setUserStats] = useState<Record<string, UserItem>>({});
+  const [lastRefreshTime, setLastRefreshTime] = useState<number>(0);
+
+  // Load cached user stats on mount
+  useEffect(() => {
+    getCachedUserStats().then((cached) => {
+      if (cached) {
+        setUserStats(cached);
+      }
+    });
+  }, []);
 
   // Debounce search
   useEffect(() => {
@@ -71,21 +84,15 @@ export default function Command(
             // Fetch popular videos (supports pagination)
             data = await getPopularVideos(newPage);
           } else if (searchType === "bili_user") {
-            // Fetch followings
-            // If searchText starts with ":", we use it to filter locally.
-            // But we still need to fetch the list first.
-            // For now, let's just fetch normal followings.
-            // If user typed ":keyword", we might want to fetch *more* pages or just filter current page?
-            // "Search IN current followings" -> implies filtering what is there or what we fetch.
-            // Let's fetch normal page and filter in the render or state update?
-            // Better: fetch and filter here if we want to support "search".
-            // But getFollowings(page) returns a page.
-            // If I type ":test", and test is on page 2, fetching page 1 won't find it.
-            // A true "search" needs API. Since API is 404, we rely on filtering what we have.
-            // To make it useful, if ":" is detecting, maybe we should fetch MORE pages?
-            // Limiting to normal pagination for safety.
+            // Check if followings changed
+            // Check if followings changed, only on first page to avoid rate limiting
+            // and redundant checks during pagination
+            let hasChanged = false;
+            if (newPage === 1) {
+              hasChanged = await checkFollowingsChanged();
+            }
 
-            const followings = await getFollowings(newPage);
+            const followings = await getFollowings(newPage, false);
 
             if (searchText.startsWith(":")) {
               const keyword = searchText.slice(1).trim().toLowerCase();
@@ -98,6 +105,11 @@ export default function Command(
               }
             } else {
               data = followings;
+            }
+
+            // If list changed, clear stats to trigger refetch
+            if (hasChanged && newPage === 1) {
+              setUserStats({});
             }
           } else {
             if (searchText) {
@@ -217,8 +229,13 @@ export default function Command(
             newUserStats[mid] = stats;
           }
         });
+
         await Promise.all(promises);
-        setUserStats((prev) => ({ ...prev, ...newUserStats }));
+        setUserStats((prev) => {
+          const next = { ...prev, ...newUserStats };
+          saveCachedUserStats(next);
+          return next;
+        });
       }
     };
 
@@ -246,6 +263,15 @@ export default function Command(
 
   const toggleDetail = () => {
     setIsShowingDetail((prev) => !prev);
+  };
+
+  const handleRefreshUserData = async () => {
+    // Force refresh user data
+    await getFollowings(1, true);
+    setUserStats({});
+    // Trigger re-search
+    performSearch(1);
+    setLastRefreshTime(Date.now());
   };
 
   return (
@@ -304,6 +330,7 @@ export default function Command(
                 ? userStats[(item as UserItem).mid]
                 : undefined
             }
+            onRefreshUserData={handleRefreshUserData}
           />
         );
       })}
@@ -323,6 +350,7 @@ function SearchResultItem({
   onToggleDetail,
   videoStats,
   userStats,
+  onRefreshUserData,
 }: {
   id: string;
   item: AnyItem;
@@ -332,6 +360,7 @@ function SearchResultItem({
   onToggleDetail: () => void;
   videoStats?: VideoStats;
   userStats?: UserItem;
+  onRefreshUserData?: () => void;
 }) {
   let title = "";
   let cover = "";
@@ -355,6 +384,17 @@ function SearchResultItem({
           onAction={onToggleDetail}
         />
       </ActionPanel.Section>
+
+      {searchType === "bili_user" && onRefreshUserData && (
+        <ActionPanel.Section title="User Actions">
+          <Action
+            title="Refresh User Data"
+            icon={Icon.RotateClockwise}
+            shortcut={{ modifiers: ["ctrl"], key: "r" }}
+            onAction={onRefreshUserData}
+          />
+        </ActionPanel.Section>
+      )}
 
       <ActionPanel.Section title="Navigation">
         <Action

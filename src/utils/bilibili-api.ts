@@ -1,5 +1,82 @@
 import fetch from "node-fetch";
 import { getCookie } from "./auth";
+import { LocalStorage } from "@raycast/api";
+
+// 缓存键定义
+const CACHE_KEYS = {
+  FOLLOWINGS_LIST: "bilibili_followings_list",
+  USER_STATS: "bilibili_user_stats",
+  FOLLOWINGS_HASH: "bilibili_followings_hash",
+  MID: "bilibili_mid",
+};
+
+// 计算关注列表的哈希值，用于检测变化
+function hashFollowingsList(list: UserItem[]): string {
+  const ids = list.map((u) => u.mid).join(",");
+  return String(
+    ids.split("").reduce((a, b) => (a << 5) - a + b.charCodeAt(0), 0),
+  );
+}
+
+// 从本地存储获取缓存的关注列表
+async function getCachedFollowings(): Promise<UserItem[] | null> {
+  try {
+    const cached = await LocalStorage.getItem(CACHE_KEYS.FOLLOWINGS_LIST);
+    return cached ? JSON.parse(String(cached)) : null;
+  } catch {
+    return null;
+  }
+}
+
+// 从本地存储获取缓存的用户统计信息
+export async function getCachedUserStats(): Promise<Record<
+  string,
+  UserItem
+> | null> {
+  try {
+    const cached = await LocalStorage.getItem(CACHE_KEYS.USER_STATS);
+    return cached ? JSON.parse(String(cached)) : null;
+  } catch {
+    return null;
+  }
+}
+
+// 保存关注列表到本地存储
+async function saveCachedFollowings(list: UserItem[]): Promise<void> {
+  try {
+    await LocalStorage.setItem(
+      CACHE_KEYS.FOLLOWINGS_LIST,
+      JSON.stringify(list),
+    );
+    await LocalStorage.setItem(
+      CACHE_KEYS.FOLLOWINGS_HASH,
+      hashFollowingsList(list),
+    );
+  } catch (e) {
+    console.error("Failed to save followings cache:", e);
+  }
+}
+
+// 保存用户统计信息到本地存储
+export async function saveCachedUserStats(
+  stats: Record<string, UserItem>,
+): Promise<void> {
+  try {
+    await LocalStorage.setItem(CACHE_KEYS.USER_STATS, JSON.stringify(stats));
+  } catch (e) {
+    console.error("Failed to save user stats cache:", e);
+  }
+}
+
+// 获取缓存的关注列表哈希值
+async function getCachedFollowingsHash(): Promise<string | null> {
+  try {
+    const cached = await LocalStorage.getItem(CACHE_KEYS.FOLLOWINGS_HASH);
+    return cached ? String(cached) : null;
+  } catch {
+    return null;
+  }
+}
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
@@ -296,6 +373,15 @@ export async function getHistory(
 }
 
 export async function getSelfMid(): Promise<number | null> {
+  try {
+    const cachedMid = await LocalStorage.getItem(CACHE_KEYS.MID);
+    if (cachedMid) {
+      return Number(cachedMid);
+    }
+  } catch (e) {
+    console.error("Failed to get cached MID", e);
+  }
+
   const cookie = getCookie();
   if (!cookie) return null;
   try {
@@ -304,7 +390,9 @@ export async function getSelfMid(): Promise<number | null> {
     });
     const navJson = (await navRes.json()) as any;
     if (navJson.code === 0) {
-      return navJson.data.mid;
+      const mid = navJson.data.mid;
+      await LocalStorage.setItem(CACHE_KEYS.MID, String(mid));
+      return mid;
     }
   } catch (e) {
     console.error("Failed to fetch self mid", e);
@@ -533,9 +621,20 @@ export async function getPopularVideos(page: number = 1): Promise<VideoItem[]> {
   return [];
 }
 
-export async function getFollowings(page: number = 1): Promise<UserItem[]> {
+export async function getFollowings(
+  page: number = 1,
+  forceRefresh: boolean = false,
+): Promise<UserItem[]> {
   const mid = await getSelfMid();
   if (!mid) return [];
+
+  // 只在第一页且不强制刷新时使用缓存
+  if (page === 1 && !forceRefresh) {
+    const cached = await getCachedFollowings();
+    if (cached && cached.length > 0) {
+      return cached;
+    }
+  }
 
   const url = `https://api.bilibili.com/x/relation/followings?vmid=${mid}&pn=${page}&ps=20&order=desc`;
   const cookie = getCookie();
@@ -550,25 +649,76 @@ export async function getFollowings(page: number = 1): Promise<UserItem[]> {
     });
     const json = (await response.json()) as any;
     if (json.code === 0 && json.data && json.data.list) {
-      return json.data.list.map((item: any) => ({
+      const list = json.data.list.map((item: any) => ({
         type: "bili_user",
         mid: item.mid,
         uname: item.uname,
         usign: item.sign,
         upic: item.face,
-        videos: 0, // API doesn't return video count directly here
-        fans: 0, // API doesn't return fans count directly here
-        level: 0, // API doesn't return level directly here
+        videos: 0,
+        fans: 0,
+        level: 0,
         gender: 0,
         is_live: 0,
         room_id: 0,
         res: [],
       }));
+
+      // 只在第一页时保存缓存
+      if (page === 1) {
+        await saveCachedFollowings(list);
+      }
+
+      return list;
     }
   } catch (e) {
     console.error("Failed to fetch followings", e);
   }
   return [];
+}
+
+// 新增：检查关注列表是否有变化
+export async function checkFollowingsChanged(): Promise<boolean> {
+  const mid = await getSelfMid();
+  if (!mid) return false;
+
+  const url = `https://api.bilibili.com/x/relation/followings?vmid=${mid}&pn=1&ps=20&order=desc`;
+  const cookie = getCookie();
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": USER_AGENT,
+        Referer: REFERER,
+        Cookie: cookie || "",
+      },
+    });
+    const json = (await response.json()) as any;
+    if (json.code === 0 && json.data && json.data.list) {
+      const newList = json.data.list.map((item: any) => ({
+        type: "bili_user",
+        mid: item.mid,
+        uname: item.uname,
+        usign: item.sign,
+        upic: item.face,
+        videos: 0,
+        fans: 0,
+        level: 0,
+        gender: 0,
+        is_live: 0,
+        room_id: 0,
+        res: [],
+      }));
+
+      const oldHash = await getCachedFollowingsHash();
+      const newHash = hashFollowingsList(newList);
+
+      return oldHash !== newHash;
+    }
+  } catch (e) {
+    console.error("Failed to check followings change", e);
+  }
+  return false;
 }
 
 export async function searchBilibili(
