@@ -562,10 +562,19 @@ ${v.description || "No description"}
     const cvText = seasonStats?.actors || b.cv || "N/A";
     const staffText = seasonStats?.staff || b.staff || "N/A";
 
+    const statsText = `${formatNumber(b.stat?.view || 0)}播放 · ${formatNumber(b.stat?.danmaku || 0)}弹幕 · ${formatNumber(b.stat?.follow || 0)}追番`;
+    const subtitleText = [b.styles, b.release_date_show, b.index_show]
+      .filter(Boolean)
+      .join(" · ");
+
     detailMarkdown = `
 ![Cover](${cover})
 
 # ${title}
+
+${statsText}
+
+${subtitleText}
 
 **Score**: ${scoreText}
 **CV**: \n${cvText}
@@ -594,10 +603,19 @@ ${b.desc || "No description"}
     const actorsText = seasonStats?.actors || m.actors || "N/A";
     const staffText = seasonStats?.staff || m.staff || "N/A";
 
+    const statsText = `${formatNumber(m.stat?.view || 0)}播放 · ${formatNumber(m.stat?.danmaku || 0)}弹幕 · ${formatNumber(m.stat?.follow || 0)}追番`;
+    const subtitleText = [m.styles, m.release_date_show, m.index_show]
+      .filter(Boolean)
+      .join(" · ");
+
     detailMarkdown = `
 ![Cover](${cover})
 
 # ${title}
+
+${statsText}
+
+${subtitleText}
 
 **Score**: ${scoreText}
 **Actors**: \n${actorsText}
@@ -745,7 +763,15 @@ ${stats.usign || "No bio"}
         !isShowingDetail
           ? searchType === "bili_user"
             ? userStats?.usign || (item as UserItem).usign || ""
-            : (item as any).author || (item as any).uname
+            : searchType === "media_bangumi" || searchType === "media_ft"
+              ? [
+                  (item as any).styles,
+                  (item as any).release_date_show,
+                  (item as any).index_show,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
+              : (item as any).author || (item as any).uname
           : undefined
       }
       icon={
@@ -764,20 +790,29 @@ ${stats.usign || "No bio"}
                   text: `Videos: ${formatNumber(userStats?.videos ?? (item as UserItem).videos)}`,
                 },
               ]
-            : [
-                {
-                  text: `⏯ ${formatNumber((item as any).play || (item as any).view || 0)}`,
-                },
-                { text: formatDuration((item as any).duration) },
-                {
-                  date: (item as any).pubdate
-                    ? new Date((item as any).pubdate * 1000)
-                    : undefined,
-                  tooltip: (item as any).pubdate
-                    ? new Date((item as any).pubdate * 1000).toLocaleString()
-                    : undefined,
-                },
-              ]
+            : searchType === "media_bangumi" || searchType === "media_ft"
+              ? [
+                  {
+                    text: `▶ ${formatNumber((item as any).stat?.view || 0)}`,
+                  },
+                  {
+                    text: `★ ${(seasonStats && seasonStats.score > 0 ? seasonStats.score : (item as any).media_score?.score) || "N/A"}`,
+                  },
+                ]
+              : [
+                  {
+                    text: `▶ ${formatNumber((item as any).play || (item as any).view || 0)}`,
+                  },
+                  { text: formatDuration((item as any).duration) },
+                  {
+                    date: (item as any).pubdate
+                      ? new Date((item as any).pubdate * 1000)
+                      : undefined,
+                    tooltip: (item as any).pubdate
+                      ? new Date((item as any).pubdate * 1000).toLocaleString()
+                      : undefined,
+                  },
+                ]
           : undefined
       }
       detail={

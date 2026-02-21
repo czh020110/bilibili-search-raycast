@@ -237,6 +237,14 @@ export interface BangumiItem {
     score: number;
     user_count: number;
   };
+  stat?: {
+    view: number;
+    danmaku: number;
+    follow: number;
+  };
+  styles?: string; // e.g. "奇幻 / 漫画改 / 冒险"
+  release_date_show?: string; // e.g. "2017" or "2017年"
+  index_show?: string; // e.g. "已完结, 全12话" or "连载中, 每周六10点更新"
 }
 
 export interface MovieItem {
@@ -257,6 +265,14 @@ export interface MovieItem {
     score: number;
     user_count: number;
   };
+  stat?: {
+    view: number;
+    danmaku: number;
+    follow: number;
+  };
+  styles?: string; // e.g. "奇幻 / 漫画改 / 冒险"
+  release_date_show?: string; // e.g. "2017" or "2017年"
+  index_show?: string; // e.g. "已完结, 全12话"或"连载中, 每周六10点更新"
 }
 
 export interface LiveItem {
@@ -675,7 +691,7 @@ export async function getFollowedBangumi(
 
   if (page === 1 && !forceRefresh) {
     const cached = await getCachedFollowedBangumi();
-    if (cached && cached.length > 0) {
+    if (cached && cached.length > 0 && cached[0].stat !== undefined) {
       return cached;
     }
   }
@@ -714,6 +730,16 @@ export async function getFollowedBangumi(
           score: item.rating?.score || 0,
           user_count: item.rating?.count || 0,
         },
+        stat: {
+          view: item.stat?.view || 0,
+          danmaku: item.stat?.danmaku || 0,
+          follow: item.stat?.series_follow || item.stat?.follow || 0,
+        },
+        styles: item.styles ? item.styles.join(" / ") : "",
+        release_date_show: item.publish?.release_date_show
+          ? item.publish.release_date_show.substring(0, 4)
+          : "",
+        index_show: item.new_ep?.index_show || "",
       })) as BangumiItem[];
 
       if (page === 1) {
@@ -737,7 +763,7 @@ export async function getFollowedCinema(
 
   if (page === 1 && !forceRefresh) {
     const cached = await getCachedFollowedCinema();
-    if (cached && cached.length > 0) {
+    if (cached && cached.length > 0 && cached[0].stat !== undefined) {
       return cached;
     }
   }
@@ -773,6 +799,16 @@ export async function getFollowedCinema(
           score: item.rating?.score || 0,
           user_count: item.rating?.count || 0,
         },
+        stat: {
+          view: item.stat?.view || 0,
+          danmaku: item.stat?.danmaku || 0,
+          follow: item.stat?.series_follow || item.stat?.follow || 0,
+        },
+        styles: item.styles ? item.styles.join(" / ") : "",
+        release_date_show: item.publish?.release_date_show
+          ? item.publish.release_date_show.substring(0, 4)
+          : "",
+        index_show: item.new_ep?.index_show || "",
       })) as MovieItem[];
 
       if (page === 1) {
@@ -944,6 +980,9 @@ export async function searchBilibili(
 }
 
 export function formatNumber(num: number): string {
+  if (num >= 100000000) {
+    return (num / 100000000).toFixed(1) + "亿";
+  }
   if (num >= 10000) {
     return (num / 10000).toFixed(1) + "万";
   }
