@@ -685,198 +685,271 @@ export async function getPopularVideos(page: number = 1): Promise<VideoItem[]> {
 export async function getFollowedBangumi(
   page: number = 1,
   forceRefresh: boolean = false,
+  fetchAll: boolean = false,
 ): Promise<BangumiItem[]> {
   const mid = await getSelfMid();
   if (!mid) return [];
 
-  if (page === 1 && !forceRefresh) {
+  if (page === 1 && !forceRefresh && !fetchAll) {
     const cached = await getCachedFollowedBangumi();
     if (cached && cached.length > 0 && cached[0].stat !== undefined) {
+      // If we are asking for all items but cache has less than 15, we might assume there's no more, OR we don't know the total.
+      // But typically we only cache the first page. If we need all, we should probably fetch them.
       return cached;
     }
   }
 
-  const url = `https://api.bilibili.com/x/space/bangumi/follow/list?type=1&follow_status=0&pn=${page}&ps=15&vmid=${mid}`;
-  const cookie = getCookie();
+  let allItems: BangumiItem[] = [];
+  let currentPage = page;
+  let hasMore = true;
 
-  try {
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": USER_AGENT,
-        Referer: REFERER,
-        Cookie: cookie || "",
-      },
-    });
-    const json = (await response.json()) as any;
-    if (json.code === 0 && json.data && json.data.list) {
-      if (json.data.list.length > 0 && page === 1) {
-        console.log("RAW BANGUMI:", JSON.stringify(json.data.list[0], null, 2));
-      }
-      const list = json.data.list.map((item: any) => ({
-        type: "media_bangumi",
-        media_id: item.media_id,
-        title: item.title,
-        org_title: item.title,
-        cover: item.cover,
-        desc: item.evaluate,
-        season_id: String(item.season_id),
-        url: `https://www.bilibili.com/bangumi/play/ss${item.season_id}`,
-        cv: "",
-        staff: "",
-        areas: item.areas ? item.areas.map((a: any) => a.name).join(", ") : "",
-        goto_url: "",
-        pubtime: 0,
-        media_score: {
-          score: item.rating?.score || 0,
-          user_count: item.rating?.count || 0,
+  while (hasMore) {
+    const url = `https://api.bilibili.com/x/space/bangumi/follow/list?type=1&follow_status=0&pn=${currentPage}&ps=15&vmid=${mid}`;
+    const cookie = getCookie();
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": USER_AGENT,
+          Referer: REFERER,
+          Cookie: cookie || "",
         },
-        stat: {
-          view: item.stat?.view || 0,
-          danmaku: item.stat?.danmaku || 0,
-          follow: item.stat?.series_follow || item.stat?.follow || 0,
-        },
-        styles: item.styles ? item.styles.join(" / ") : "",
-        release_date_show: item.publish?.release_date_show
-          ? item.publish.release_date_show.substring(0, 4)
-          : "",
-        index_show: item.new_ep?.index_show || "",
-      })) as BangumiItem[];
+      });
+      const json = (await response.json()) as any;
+      if (json.code === 0 && json.data && json.data.list) {
+        if (json.data.list.length > 0 && currentPage === 1) {
+          console.log(
+            "RAW BANGUMI:",
+            JSON.stringify(json.data.list[0], null, 2),
+          );
+        }
+        const list = json.data.list.map((item: any) => ({
+          type: "media_bangumi",
+          media_id: item.media_id,
+          title: item.title,
+          org_title: item.title,
+          cover: item.cover,
+          desc: item.evaluate,
+          season_id: String(item.season_id),
+          url: `https://www.bilibili.com/bangumi/play/ss${item.season_id}`,
+          cv: "",
+          staff: "",
+          areas: item.areas
+            ? item.areas.map((a: any) => a.name).join(", ")
+            : "",
+          goto_url: "",
+          pubtime: 0,
+          media_score: {
+            score: item.rating?.score || 0,
+            user_count: item.rating?.count || 0,
+          },
+          stat: {
+            view: item.stat?.view || 0,
+            danmaku: item.stat?.danmaku || 0,
+            follow: item.stat?.series_follow || item.stat?.follow || 0,
+          },
+          styles: item.styles ? item.styles.join(" / ") : "",
+          release_date_show: item.publish?.release_date_show
+            ? item.publish.release_date_show.substring(0, 4)
+            : "",
+          index_show: item.new_ep?.index_show || "",
+        })) as BangumiItem[];
 
-      if (page === 1) {
-        await saveCachedFollowedBangumi(list);
+        allItems = allItems.concat(list);
+
+        if (currentPage === 1 && !fetchAll) {
+          await saveCachedFollowedBangumi(list);
+        }
+
+        if (!fetchAll || list.length === 0) {
+          hasMore = false;
+        } else {
+          currentPage++;
+        }
+      } else {
+        hasMore = false;
       }
-
-      return list;
+    } catch (e) {
+      console.error("Failed to fetch followed bangumi", e);
+      hasMore = false;
     }
-  } catch (e) {
-    console.error("Failed to fetch followed bangumi", e);
   }
-  return [];
+
+  // Update cache with all merged items if fetchAll was requested
+  if (fetchAll && allItems.length > 0) {
+    await saveCachedFollowedBangumi(allItems);
+  }
+
+  return allItems;
 }
 
 export async function getFollowedCinema(
   page: number = 1,
   forceRefresh: boolean = false,
+  fetchAll: boolean = false,
 ): Promise<MovieItem[]> {
   const mid = await getSelfMid();
   if (!mid) return [];
 
-  if (page === 1 && !forceRefresh) {
+  if (page === 1 && !forceRefresh && !fetchAll) {
     const cached = await getCachedFollowedCinema();
     if (cached && cached.length > 0 && cached[0].stat !== undefined) {
       return cached;
     }
   }
 
-  const url = `https://api.bilibili.com/x/space/bangumi/follow/list?type=2&follow_status=0&pn=${page}&ps=15&vmid=${mid}`;
-  const cookie = getCookie();
+  let allItems: MovieItem[] = [];
+  let currentPage = page;
+  let hasMore = true;
 
-  try {
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": USER_AGENT,
-        Referer: REFERER,
-        Cookie: cookie || "",
-      },
-    });
-    const json = (await response.json()) as any;
-    if (json.code === 0 && json.data && json.data.list) {
-      const list = json.data.list.map((item: any) => ({
-        type: "media_ft",
-        media_id: item.media_id,
-        title: item.title,
-        org_title: item.title,
-        cover: item.cover,
-        desc: item.evaluate,
-        season_id: String(item.season_id),
-        url: `https://www.bilibili.com/bangumi/play/ss${item.season_id}`,
-        areas: item.areas ? item.areas.map((a: any) => a.name).join(", ") : "",
-        staff: "",
-        actors: "",
-        pubtime: 0,
-        goto_url: "",
-        media_score: {
-          score: item.rating?.score || 0,
-          user_count: item.rating?.count || 0,
-        },
-        stat: {
-          view: item.stat?.view || 0,
-          danmaku: item.stat?.danmaku || 0,
-          follow: item.stat?.series_follow || item.stat?.follow || 0,
-        },
-        styles: item.styles ? item.styles.join(" / ") : "",
-        release_date_show: item.publish?.release_date_show
-          ? item.publish.release_date_show.substring(0, 4)
-          : "",
-        index_show: item.new_ep?.index_show || "",
-      })) as MovieItem[];
+  while (hasMore) {
+    const url = `https://api.bilibili.com/x/space/bangumi/follow/list?type=2&follow_status=0&pn=${currentPage}&ps=15&vmid=${mid}`;
+    const cookie = getCookie();
 
-      if (page === 1) {
-        await saveCachedFollowedCinema(list);
+    try {
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": USER_AGENT,
+          Referer: REFERER,
+          Cookie: cookie || "",
+        },
+      });
+      const json = (await response.json()) as any;
+      if (json.code === 0 && json.data && json.data.list) {
+        const list = json.data.list.map((item: any) => ({
+          type: "media_ft",
+          media_id: item.media_id,
+          title: item.title,
+          org_title: item.title,
+          cover: item.cover,
+          desc: item.evaluate,
+          season_id: String(item.season_id),
+          url: `https://www.bilibili.com/bangumi/play/ss${item.season_id}`,
+          areas: item.areas
+            ? item.areas.map((a: any) => a.name).join(", ")
+            : "",
+          staff: "",
+          actors: "",
+          pubtime: 0,
+          goto_url: "",
+          media_score: {
+            score: item.rating?.score || 0,
+            user_count: item.rating?.count || 0,
+          },
+          stat: {
+            view: item.stat?.view || 0,
+            danmaku: item.stat?.danmaku || 0,
+            follow: item.stat?.series_follow || item.stat?.follow || 0,
+          },
+          styles: item.styles ? item.styles.join(" / ") : "",
+          release_date_show: item.publish?.release_date_show
+            ? item.publish.release_date_show.substring(0, 4)
+            : "",
+          index_show: item.new_ep?.index_show || "",
+        })) as MovieItem[];
+
+        allItems = allItems.concat(list);
+
+        if (currentPage === 1 && !fetchAll) {
+          await saveCachedFollowedCinema(list);
+        }
+
+        if (!fetchAll || list.length === 0) {
+          hasMore = false;
+        } else {
+          currentPage++;
+        }
+      } else {
+        hasMore = false;
       }
-
-      return list;
+    } catch (e) {
+      console.error("Failed to fetch followed cinema", e);
+      hasMore = false;
     }
-  } catch (e) {
-    console.error("Failed to fetch followed cinema", e);
   }
-  return [];
+
+  // Update cache with all merged items if fetchAll was requested
+  if (fetchAll && allItems.length > 0) {
+    await saveCachedFollowedCinema(allItems);
+  }
+
+  return allItems;
 }
 
 export async function getFollowings(
   page: number = 1,
   forceRefresh: boolean = false,
+  fetchAll: boolean = false,
 ): Promise<UserItem[]> {
   const mid = await getSelfMid();
   if (!mid) return [];
 
   // 只在第一页且不强制刷新时使用缓存
-  if (page === 1 && !forceRefresh) {
+  if (page === 1 && !forceRefresh && !fetchAll) {
     const cached = await getCachedFollowings();
     if (cached && cached.length > 0) {
       return cached;
     }
   }
 
-  const url = `https://api.bilibili.com/x/relation/followings?vmid=${mid}&pn=${page}&ps=20&order=desc`;
-  const cookie = getCookie();
+  let allUsers: UserItem[] = [];
+  let currentPage = page;
+  let hasMore = true;
 
-  try {
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": USER_AGENT,
-        Referer: REFERER,
-        Cookie: cookie || "",
-      },
-    });
-    const json = (await response.json()) as any;
-    if (json.code === 0 && json.data && json.data.list) {
-      const list = json.data.list.map((item: any) => ({
-        type: "bili_user",
-        mid: item.mid,
-        uname: item.uname,
-        usign: item.sign,
-        upic: item.face,
-        videos: 0,
-        fans: 0,
-        level: 0,
-        gender: 0,
-        is_live: 0,
-        room_id: 0,
-        res: [],
-      }));
+  while (hasMore) {
+    const url = `https://api.bilibili.com/x/relation/followings?vmid=${mid}&pn=${currentPage}&ps=20&order=desc`;
+    const cookie = getCookie();
 
-      // 只在第一页时保存缓存
-      if (page === 1) {
-        await saveCachedFollowings(list);
+    try {
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": USER_AGENT,
+          Referer: REFERER,
+          Cookie: cookie || "",
+        },
+      });
+      const json = (await response.json()) as any;
+      if (json.code === 0 && json.data?.list) {
+        const users = json.data.list.map((item: any) => ({
+          type: "bili_user",
+          mid: item.mid,
+          uname: item.uname,
+          usign: item.sign,
+          upic: item.face,
+          fans: 0,
+          videos: 0,
+          level: item.vip?.vipType || 0,
+          official_verify: {
+            type: item.official_verify?.type || -1,
+            desc: item.official_verify?.desc || "",
+          },
+        })) as UserItem[];
+
+        allUsers = allUsers.concat(users);
+
+        if (currentPage === 1 && !fetchAll) {
+          await saveCachedFollowings(users);
+        }
+
+        if (!fetchAll || users.length === 0) {
+          hasMore = false;
+        } else {
+          currentPage++;
+        }
+      } else {
+        hasMore = false;
       }
-
-      return list;
+    } catch (e) {
+      console.error("Failed to fetch followings", e);
+      hasMore = false;
     }
-  } catch (e) {
-    console.error("Failed to fetch followings", e);
   }
-  return [];
+
+  if (fetchAll && allUsers.length > 0) {
+    await saveCachedFollowings(allUsers);
+  }
+
+  return allUsers;
 }
 
 // 新增：检查关注列表是否有变化

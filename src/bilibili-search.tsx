@@ -99,9 +99,12 @@ export default function Command(
               hasChanged = await checkFollowingsChanged();
             }
 
-            const followings = await getFollowings(newPage, false);
+            const isLocalSearch = searchText.startsWith(":");
+            const fetchAll = isLocalSearch;
 
-            if (searchText.startsWith(":")) {
+            const followings = await getFollowings(newPage, false, fetchAll);
+
+            if (isLocalSearch) {
               const keyword = searchText.slice(1).trim().toLowerCase();
               if (keyword) {
                 data = followings.filter((u) =>
@@ -119,8 +122,11 @@ export default function Command(
               setUserStats({});
             }
           } else if (searchType === "media_bangumi") {
-            const bangumis = await getFollowedBangumi(newPage, false);
-            if (searchText.startsWith(":")) {
+            const isLocalSearch = searchText.startsWith(":");
+            const fetchAll = isLocalSearch;
+
+            const bangumis = await getFollowedBangumi(newPage, false, fetchAll);
+            if (isLocalSearch) {
               const keyword = searchText.slice(1).trim().toLowerCase();
               if (keyword) {
                 data = bangumis.filter((b) =>
@@ -133,8 +139,11 @@ export default function Command(
               data = bangumis;
             }
           } else if (searchType === "media_ft") {
-            const movies = await getFollowedCinema(newPage, false);
-            if (searchText.startsWith(":")) {
+            const isLocalSearch = searchText.startsWith(":");
+            const fetchAll = isLocalSearch;
+
+            const movies = await getFollowedCinema(newPage, false, fetchAll);
+            if (isLocalSearch) {
               const keyword = searchText.slice(1).trim().toLowerCase();
               if (keyword) {
                 data = movies.filter((m) =>
