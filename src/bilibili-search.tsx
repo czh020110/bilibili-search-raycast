@@ -562,7 +562,6 @@ ${v.description || "No description"}
     const cvText = seasonStats?.actors || b.cv || "N/A";
     const staffText = seasonStats?.staff || b.staff || "N/A";
 
-    const statsText = `${formatNumber(b.stat?.view || 0)}播放 · ${formatNumber(b.stat?.danmaku || 0)}弹幕 · ${formatNumber(b.stat?.follow || 0)}追番`;
     const subtitleText = [b.styles, b.release_date_show, b.index_show]
       .filter(Boolean)
       .join(" · ");
@@ -572,20 +571,23 @@ ${v.description || "No description"}
 
 # ${title}
 
-${statsText}
-
-${subtitleText}
-
-**Score**: ${scoreText}
-**CV**: \n${cvText}
-
+**Synopsis:**
 ${b.desc || "No description"}
         `;
 
     metadata = (
       <List.Item.Detail.Metadata>
-        <List.Item.Detail.Metadata.Label title="Score" text={scoreText} />
+        <List.Item.Detail.Metadata.Label
+          title="Score"
+          text={`⭐ ${scoreText}`}
+        />
+        <List.Item.Detail.Metadata.Label
+          title="Data"
+          text={`▶ ${formatNumber(b.stat?.view || 0)}   ♥ ${formatNumber(b.stat?.follow || 0)}   ※ ${formatNumber(b.stat?.danmaku || 0)}`}
+        />
+        <List.Item.Detail.Metadata.Label title="Genre" text={subtitleText} />
         <List.Item.Detail.Metadata.Label title="Staff" text={staffText} />
+        <List.Item.Detail.Metadata.Label title="CV" text={cvText} />
         <List.Item.Detail.Metadata.Label title="Areas" text={b.areas} />
       </List.Item.Detail.Metadata>
     );
@@ -603,7 +605,6 @@ ${b.desc || "No description"}
     const actorsText = seasonStats?.actors || m.actors || "N/A";
     const staffText = seasonStats?.staff || m.staff || "N/A";
 
-    const statsText = `${formatNumber(m.stat?.view || 0)}播放 · ${formatNumber(m.stat?.danmaku || 0)}弹幕 · ${formatNumber(m.stat?.follow || 0)}追番`;
     const subtitleText = [m.styles, m.release_date_show, m.index_show]
       .filter(Boolean)
       .join(" · ");
@@ -613,20 +614,23 @@ ${b.desc || "No description"}
 
 # ${title}
 
-${statsText}
-
-${subtitleText}
-
-**Score**: ${scoreText}
-**Actors**: \n${actorsText}
-
+**Synopsis:**
 ${m.desc || "No description"}
         `;
 
     metadata = (
       <List.Item.Detail.Metadata>
-        <List.Item.Detail.Metadata.Label title="Score" text={scoreText} />
+        <List.Item.Detail.Metadata.Label
+          title="Score"
+          text={`⭐ ${scoreText}`}
+        />
+        <List.Item.Detail.Metadata.Label
+          title="Data"
+          text={`▶ ${formatNumber(m.stat?.view || 0)}   ♥ ${formatNumber(m.stat?.follow || 0)}   ※ ${formatNumber(m.stat?.danmaku || 0)}`}
+        />
+        <List.Item.Detail.Metadata.Label title="Genre" text={subtitleText} />
         <List.Item.Detail.Metadata.Label title="Staff" text={staffText} />
+        <List.Item.Detail.Metadata.Label title="Actors" text={actorsText} />
         <List.Item.Detail.Metadata.Label title="Areas" text={m.areas} />
       </List.Item.Detail.Metadata>
     );
