@@ -8,6 +8,8 @@ const CACHE_KEYS = {
   USER_STATS: "bilibili_user_stats",
   FOLLOWINGS_HASH: "bilibili_followings_hash",
   MID: "bilibili_mid",
+  FOLLOWED_BANGUMI_LIST: "bilibili_followed_bangumi_list",
+  FOLLOWED_CINEMA_LIST: "bilibili_followed_cinema_list",
 };
 
 // 计算关注列表的哈希值，用于检测变化
@@ -54,6 +56,48 @@ async function saveCachedFollowings(list: UserItem[]): Promise<void> {
     );
   } catch (e) {
     console.error("Failed to save followings cache:", e);
+  }
+}
+
+// 缓存 Bangumi
+async function getCachedFollowedBangumi(): Promise<BangumiItem[] | null> {
+  try {
+    const cached = await LocalStorage.getItem(CACHE_KEYS.FOLLOWED_BANGUMI_LIST);
+    return cached ? JSON.parse(String(cached)) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function saveCachedFollowedBangumi(list: BangumiItem[]): Promise<void> {
+  try {
+    await LocalStorage.setItem(
+      CACHE_KEYS.FOLLOWED_BANGUMI_LIST,
+      JSON.stringify(list),
+    );
+  } catch (e) {
+    console.error("Failed to save followed bangumi cache:", e);
+  }
+}
+
+// 缓存 Cinema (Movie/TV)
+async function getCachedFollowedCinema(): Promise<MovieItem[] | null> {
+  try {
+    const cached = await LocalStorage.getItem(CACHE_KEYS.FOLLOWED_CINEMA_LIST);
+    return cached ? JSON.parse(String(cached)) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function saveCachedFollowedCinema(list: MovieItem[]): Promise<void> {
+  try {
+    await LocalStorage.setItem(
+      CACHE_KEYS.FOLLOWED_CINEMA_LIST,
+      JSON.stringify(list),
+    );
+  } catch (e) {
+    console.error("Failed to save followed cinema cache:", e);
   }
 }
 
@@ -202,6 +246,7 @@ export interface MovieItem {
   org_title: string;
   cover: string;
   desc: string;
+  season_id: string;
   url: string;
   areas: string;
   staff: string;
@@ -621,6 +666,127 @@ export async function getPopularVideos(page: number = 1): Promise<VideoItem[]> {
   return [];
 }
 
+export async function getFollowedBangumi(
+  page: number = 1,
+  forceRefresh: boolean = false,
+): Promise<BangumiItem[]> {
+  const mid = await getSelfMid();
+  if (!mid) return [];
+
+  if (page === 1 && !forceRefresh) {
+    const cached = await getCachedFollowedBangumi();
+    if (cached && cached.length > 0) {
+      return cached;
+    }
+  }
+
+  const url = `https://api.bilibili.com/x/space/bangumi/follow/list?type=1&follow_status=0&pn=${page}&ps=15&vmid=${mid}`;
+  const cookie = getCookie();
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": USER_AGENT,
+        Referer: REFERER,
+        Cookie: cookie || "",
+      },
+    });
+    const json = (await response.json()) as any;
+    if (json.code === 0 && json.data && json.data.list) {
+      if (json.data.list.length > 0 && page === 1) {
+        console.log("RAW BANGUMI:", JSON.stringify(json.data.list[0], null, 2));
+      }
+      const list = json.data.list.map((item: any) => ({
+        type: "media_bangumi",
+        media_id: item.media_id,
+        title: item.title,
+        org_title: item.title,
+        cover: item.cover,
+        desc: item.evaluate,
+        season_id: String(item.season_id),
+        url: `https://www.bilibili.com/bangumi/play/ss${item.season_id}`,
+        cv: "",
+        staff: "",
+        areas: item.areas ? item.areas.map((a: any) => a.name).join(", ") : "",
+        goto_url: "",
+        pubtime: 0,
+        media_score: {
+          score: item.rating?.score || 0,
+          user_count: item.rating?.count || 0,
+        },
+      })) as BangumiItem[];
+
+      if (page === 1) {
+        await saveCachedFollowedBangumi(list);
+      }
+
+      return list;
+    }
+  } catch (e) {
+    console.error("Failed to fetch followed bangumi", e);
+  }
+  return [];
+}
+
+export async function getFollowedCinema(
+  page: number = 1,
+  forceRefresh: boolean = false,
+): Promise<MovieItem[]> {
+  const mid = await getSelfMid();
+  if (!mid) return [];
+
+  if (page === 1 && !forceRefresh) {
+    const cached = await getCachedFollowedCinema();
+    if (cached && cached.length > 0) {
+      return cached;
+    }
+  }
+
+  const url = `https://api.bilibili.com/x/space/bangumi/follow/list?type=2&follow_status=0&pn=${page}&ps=15&vmid=${mid}`;
+  const cookie = getCookie();
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": USER_AGENT,
+        Referer: REFERER,
+        Cookie: cookie || "",
+      },
+    });
+    const json = (await response.json()) as any;
+    if (json.code === 0 && json.data && json.data.list) {
+      const list = json.data.list.map((item: any) => ({
+        type: "media_ft",
+        media_id: item.media_id,
+        title: item.title,
+        org_title: item.title,
+        cover: item.cover,
+        desc: item.evaluate,
+        season_id: String(item.season_id),
+        url: `https://www.bilibili.com/bangumi/play/ss${item.season_id}`,
+        areas: item.areas ? item.areas.map((a: any) => a.name).join(", ") : "",
+        staff: "",
+        actors: "",
+        pubtime: 0,
+        goto_url: "",
+        media_score: {
+          score: item.rating?.score || 0,
+          user_count: item.rating?.count || 0,
+        },
+      })) as MovieItem[];
+
+      if (page === 1) {
+        await saveCachedFollowedCinema(list);
+      }
+
+      return list;
+    }
+  } catch (e) {
+    console.error("Failed to fetch followed cinema", e);
+  }
+  return [];
+}
+
 export async function getFollowings(
   page: number = 1,
   forceRefresh: boolean = false,
@@ -884,4 +1050,46 @@ export async function getVideoDetails(
 
 export function getProfileUrl(mid: number): string {
   return `https://space.bilibili.com/${mid}`;
+}
+
+export interface SeasonStats {
+  staff: string;
+  actors: string;
+  score: number;
+  user_count: number;
+}
+
+export async function getSeasonDetails(
+  season_id: string,
+): Promise<SeasonStats | null> {
+  const url = `https://api.bilibili.com/pgc/view/web/season?season_id=${season_id}`;
+
+  try {
+    const rawCookie = getCookie() || "";
+    const cookieHeader = rawCookie
+      ? `${rawCookie}; buvid3=infoc;`
+      : "buvid3=infoc;";
+
+    const headers = {
+      "User-Agent": USER_AGENT,
+      Referer: REFERER,
+      Cookie: cookieHeader,
+    };
+
+    const res = await fetch(url, { headers });
+    if (!res.ok) return null;
+
+    const json = (await res.json()) as any;
+    if (json.code !== 0 || !json.result) return null;
+
+    return {
+      staff: json.result.staff || "",
+      actors: json.result.actors || "",
+      score: json.result.rating?.score || 0,
+      user_count: json.result.rating?.count || 0,
+    } as SeasonStats;
+  } catch (error) {
+    console.error(`Failed to fetch season details for ${season_id}:`, error);
+    return null;
+  }
 }

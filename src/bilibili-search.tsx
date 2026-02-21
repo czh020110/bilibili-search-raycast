@@ -30,6 +30,10 @@ import {
   checkFollowingsChanged,
   getCachedUserStats,
   saveCachedUserStats,
+  getFollowedBangumi,
+  getFollowedCinema,
+  SeasonStats,
+  getSeasonDetails,
 } from "./utils/bilibili-api";
 
 interface SearchArguments {
@@ -47,6 +51,9 @@ export default function Command(
   const [isShowingDetail, setIsShowingDetail] = useState(true);
   const [videoStats, setVideoStats] = useState<Record<string, VideoStats>>({});
   const [userStats, setUserStats] = useState<Record<string, UserItem>>({});
+  const [seasonStats, setSeasonStats] = useState<Record<string, SeasonStats>>(
+    {},
+  );
   const [lastRefreshTime, setLastRefreshTime] = useState<number>(0);
 
   // Load cached user stats on mount
@@ -110,6 +117,34 @@ export default function Command(
             // If list changed, clear stats to trigger refetch
             if (hasChanged && newPage === 1) {
               setUserStats({});
+            }
+          } else if (searchType === "media_bangumi") {
+            const bangumis = await getFollowedBangumi(newPage, false);
+            if (searchText.startsWith(":")) {
+              const keyword = searchText.slice(1).trim().toLowerCase();
+              if (keyword) {
+                data = bangumis.filter((b) =>
+                  b.title.toLowerCase().includes(keyword),
+                );
+              } else {
+                data = bangumis;
+              }
+            } else {
+              data = bangumis;
+            }
+          } else if (searchType === "media_ft") {
+            const movies = await getFollowedCinema(newPage, false);
+            if (searchText.startsWith(":")) {
+              const keyword = searchText.slice(1).trim().toLowerCase();
+              if (keyword) {
+                data = movies.filter((m) =>
+                  m.title.toLowerCase().includes(keyword),
+                );
+              } else {
+                data = movies;
+              }
+            } else {
+              data = movies;
             }
           } else {
             if (searchText) {
@@ -242,6 +277,41 @@ export default function Command(
     fetchMissingUserStats();
   }, [results, searchType]);
 
+  // Batch fetch stats for seasons (bangumi, cinema)
+  useEffect(() => {
+    if (searchType !== "media_bangumi" && searchType !== "media_ft") return;
+
+    const fetchMissingSeasonStats = async () => {
+      const missingSeasonIds = results
+        .filter(
+          (item): item is BangumiItem | MovieItem =>
+            item.type === "media_bangumi" || item.type === "media_ft",
+        )
+        .filter((item) => "season_id" in item && item.season_id)
+        .map((item) => (item as any).season_id)
+        .filter((seasonId) => !seasonStats[seasonId]);
+
+      if (missingSeasonIds.length === 0) return;
+
+      const newStats: Record<string, SeasonStats> = {};
+      const chunkSize = 5;
+      for (let i = 0; i < missingSeasonIds.length; i += chunkSize) {
+        const chunk = missingSeasonIds.slice(i, i + chunkSize);
+        const promises = chunk.map(async (seasonId) => {
+          const stats = await getSeasonDetails(seasonId);
+          if (stats) {
+            newStats[seasonId] = stats;
+          }
+        });
+
+        await Promise.all(promises);
+        setSeasonStats((prev) => ({ ...prev, ...newStats }));
+      }
+    };
+
+    fetchMissingSeasonStats();
+  }, [results, searchType]);
+
   const handleSelectionChange = async (id: string | null) => {};
 
   const categories: { label: string; value: SearchType }[] = [
@@ -330,6 +400,12 @@ export default function Command(
                 ? userStats[(item as UserItem).mid]
                 : undefined
             }
+            seasonStats={
+              (type === "media_bangumi" || type === "media_ft") &&
+              "season_id" in item
+                ? seasonStats[(item as any).season_id]
+                : undefined
+            }
             onRefreshUserData={handleRefreshUserData}
           />
         );
@@ -350,6 +426,7 @@ function SearchResultItem({
   onToggleDetail,
   videoStats,
   userStats,
+  seasonStats,
   onRefreshUserData,
 }: {
   id: string;
@@ -360,6 +437,7 @@ function SearchResultItem({
   onToggleDetail: () => void;
   videoStats?: VideoStats;
   userStats?: UserItem;
+  seasonStats?: SeasonStats;
   onRefreshUserData?: () => void;
 }) {
   let title = "";
@@ -476,24 +554,29 @@ ${v.description || "No description"}
     cover = ensureHttps(b.cover);
     url = ensureHttps(b.url);
 
+    const score =
+      seasonStats && seasonStats.score > 0
+        ? seasonStats.score
+        : b.media_score?.score;
+    const scoreText = score ? String(score) : "N/A";
+    const cvText = seasonStats?.actors || b.cv || "N/A";
+    const staffText = seasonStats?.staff || b.staff || "N/A";
+
     detailMarkdown = `
 ![Cover](${cover})
 
 # ${title}
 
-**Score**: ${b.media_score?.score ?? "N/A"}
-**CV**: ${b.cv}
+**Score**: ${scoreText}
+**CV**: \n${cvText}
 
 ${b.desc || "No description"}
         `;
 
     metadata = (
       <List.Item.Detail.Metadata>
-        <List.Item.Detail.Metadata.Label
-          title="Score"
-          text={String(b.media_score?.score ?? "N/A")}
-        />
-        <List.Item.Detail.Metadata.Label title="Staff" text={b.staff} />
+        <List.Item.Detail.Metadata.Label title="Score" text={scoreText} />
+        <List.Item.Detail.Metadata.Label title="Staff" text={staffText} />
         <List.Item.Detail.Metadata.Label title="Areas" text={b.areas} />
       </List.Item.Detail.Metadata>
     );
@@ -503,24 +586,29 @@ ${b.desc || "No description"}
     cover = ensureHttps(m.cover);
     url = ensureHttps(m.url);
 
+    const score =
+      seasonStats && seasonStats.score > 0
+        ? seasonStats.score
+        : m.media_score?.score;
+    const scoreText = score ? String(score) : "N/A";
+    const actorsText = seasonStats?.actors || m.actors || "N/A";
+    const staffText = seasonStats?.staff || m.staff || "N/A";
+
     detailMarkdown = `
 ![Cover](${cover})
 
 # ${title}
 
-**Score**: ${m.media_score?.score ?? "N/A"}
-**Actors**: ${m.actors}
+**Score**: ${scoreText}
+**Actors**: \n${actorsText}
 
 ${m.desc || "No description"}
         `;
 
     metadata = (
       <List.Item.Detail.Metadata>
-        <List.Item.Detail.Metadata.Label
-          title="Score"
-          text={String(m.media_score?.score ?? "N/A")}
-        />
-        <List.Item.Detail.Metadata.Label title="Staff" text={m.staff} />
+        <List.Item.Detail.Metadata.Label title="Score" text={scoreText} />
+        <List.Item.Detail.Metadata.Label title="Staff" text={staffText} />
         <List.Item.Detail.Metadata.Label title="Areas" text={m.areas} />
       </List.Item.Detail.Metadata>
     );
