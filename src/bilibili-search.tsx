@@ -416,6 +416,7 @@ export default function Command(
                 : undefined
             }
             onRefreshUserData={handleRefreshUserData}
+            searchText={searchText}
           />
         );
       })}
@@ -437,6 +438,7 @@ function SearchResultItem({
   userStats,
   seasonStats,
   onRefreshUserData,
+  searchText,
 }: {
   id: string;
   item: AnyItem;
@@ -448,6 +450,7 @@ function SearchResultItem({
   userStats?: UserItem;
   seasonStats?: SeasonStats;
   onRefreshUserData?: () => void;
+  searchText: string;
 }) {
   let title = "";
   let cover = "";
@@ -460,8 +463,19 @@ function SearchResultItem({
   // Common Actions
   const commonActions = (targetUrl: string) => (
     <ActionPanel>
-      <Action.OpenInBrowser url={targetUrl} title="Open in Browser" />
-      <Action.CopyToClipboard content={targetUrl} title="Copy Link" />
+      <Action.OpenInBrowser url={targetUrl} title="Open Item in Browser" />
+      {searchText.trim().length > 0 && (
+        <Action.OpenInBrowser
+          title="Search in Browser"
+          url={`https://search.bilibili.com/all?keyword=${encodeURIComponent(searchText.trim())}`}
+          shortcut={{ modifiers: ["ctrl"], key: "enter" }}
+        />
+      )}
+      <Action.CopyToClipboard
+        content={targetUrl}
+        title="Copy Link"
+        shortcut={{ modifiers: ["ctrl"], key: "c" }}
+      />
 
       <ActionPanel.Section title="View Options">
         <Action
