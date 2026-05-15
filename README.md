@@ -127,6 +127,10 @@ src/utils/              Bilibili API and auth helpers
 
 This extension communicates with Bilibili APIs to fetch search results and account data. Login cookies are stored locally in Raycast's cache and are used only for authenticated Bilibili requests such as history, favorites, followings, and followed media.
 
+## Acknowledgements
+
+This extension is inspired by the existing Bilibili extension in the Raycast extension ecosystem. It is an independent implementation focused on richer search categories, account-based browsing, and detailed result views.
+
 ## Notes
 
 Bilibili API responses and availability may change over time. If a command stops returning results, try logging in again or running the command later.
