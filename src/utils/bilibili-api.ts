@@ -546,7 +546,6 @@ export async function getFavorites(
   }
 
   return [];
-  return [];
 }
 
 export async function getAllFavorites(
@@ -556,13 +555,14 @@ export async function getAllFavorites(
   const allItems: VideoItem[] = [];
   let page = 1;
 
-  while (true) {
+  let hasMore = true;
+
+  while (hasMore) {
     const items = await getFavorites(mediaId, page, keyword);
     if (items.length === 0) break;
     allItems.push(...items);
-    if (items.length < 20) break; // Less than page size means end of list
+    if (items.length < 20) hasMore = false;
     page++;
-    // Add a small delay to be nice to the API
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
@@ -1086,7 +1086,8 @@ export function formatDuration(str: string): string {
   if (parts.length === 3) return str;
 
   if (parts.length === 2) {
-    let [m, s] = parts;
+    let [m] = parts;
+    const [, s] = parts;
     if (m >= 60) {
       const h = Math.floor(m / 60);
       m = m % 60;

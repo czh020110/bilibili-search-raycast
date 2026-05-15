@@ -5,10 +5,8 @@ import {
   Detail,
   Icon,
   List,
-  popToRoot,
   showToast,
   Toast,
-  useNavigation,
 } from "@raycast/api";
 import { useState, useEffect } from "react";
 import QRCode from "qrcode";
@@ -17,7 +15,6 @@ import { checkQRCode, generateQRCode, isLoggedIn, logout } from "./utils/auth";
 export default function Command() {
   const [isLogin, setIsLogin] = useState(isLoggedIn());
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>("");
-  const [qrCodeKey, setQrCodeKey] = useState<string>("");
   const [status, setStatus] = useState<string>("Loading QR Code...");
 
   useEffect(() => {
@@ -31,7 +28,6 @@ export default function Command() {
         const { url, qrcode_key } = await generateQRCode();
         if (!isMounted) return;
 
-        setQrCodeKey(qrcode_key);
         const dataUrl = await QRCode.toDataURL(url);
         setQrCodeDataUrl(dataUrl);
         setStatus("Scan the QR code with Bilibili App");
@@ -56,7 +52,7 @@ export default function Command() {
             }
           }
         }, 3000);
-      } catch (error) {
+      } catch {
         setStatus("Failed to load QR Code");
         showToast(Toast.Style.Failure, "Failed to generate QR Code");
       }

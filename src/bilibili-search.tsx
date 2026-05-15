@@ -4,8 +4,6 @@ import {
   Action,
   Icon,
   Image,
-  useNavigation,
-  Color,
   LaunchProps,
 } from "@raycast/api";
 import { useState, useEffect, useCallback } from "react";
@@ -54,7 +52,6 @@ export default function Command(
   const [seasonStats, setSeasonStats] = useState<Record<string, SeasonStats>>(
     {},
   );
-  const [lastRefreshTime, setLastRefreshTime] = useState<number>(0);
 
   // Load cached user stats on mount
   useEffect(() => {
@@ -321,8 +318,6 @@ export default function Command(
     fetchMissingSeasonStats();
   }, [results, searchType]);
 
-  const handleSelectionChange = async (id: string | null) => {};
-
   const categories: { label: string; value: SearchType }[] = [
     { label: "Video", value: "video" },
     { label: "Anime", value: "media_bangumi" },
@@ -350,7 +345,6 @@ export default function Command(
     setUserStats({});
     // Trigger re-search
     performSearch(1);
-    setLastRefreshTime(Date.now());
   };
 
   return (
@@ -367,7 +361,6 @@ export default function Command(
         hasMore: results.length > 0 && results.length % 20 === 0,
         pageSize: 20,
       }}
-      onSelectionChange={handleSelectionChange}
       searchBarAccessory={
         <List.Dropdown
           tooltip="Search Category"

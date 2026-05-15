@@ -101,8 +101,6 @@ export default function Command() {
     };
 
     run();
-    // 只依赖 items；videoStats 不放依赖，避免循环触发（搜索命令也是靠 missing 过滤）
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items]);
 
   if (!loggedIn) {
